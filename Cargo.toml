@@ -5,7 +5,7 @@ members = ["crates/*"]
 [workspace.package]
 version = "0.1.0"
 edition = "2021"
-rust-version = "1.85"
+rust-version = "1.89"
 license = "MIT"
 repository = "https://github.com/mkontani/win-creds-manager"
 authors = ["mkontani"]
@@ -38,7 +38,6 @@ base64 = "0.22"
 # I/O
 directories = "6.0"
 tempfile = "3.10"
-fd-lock = "4.0"
 rpassword = "7.3"
 ssh-key = { version = "0.6", features = ["ed25519", "rsa", "p256", "p384", "encryption", "std"] }
 arboard = { version = "3.4", default-features = false }
