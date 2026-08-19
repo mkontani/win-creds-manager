@@ -916,3 +916,22 @@ fn value_flag_warns_about_process_listings() {
     assert!(out.status.success(), "{}", stderr(&out));
     assert!(!stderr(&out).contains("--value exposes"));
 }
+
+#[test]
+fn the_human_mask_does_not_reveal_the_secret_length() {
+    let (v, _) = TestVault::initialized();
+    add_stdin(&v, "short", "ab", &[]);
+    add_stdin(&v, "long", "a-much-longer-secret-value", &[]);
+    let mask_of = |name: &str| {
+        let out = v.cmd().args(["show", name]).output().expect("run show");
+        assert!(out.status.success(), "{}", stderr(&out));
+        String::from_utf8_lossy(&out.stdout)
+            .lines()
+            .find_map(|l| l.trim().strip_prefix("password: ").map(str::to_string))
+            .expect("password line")
+    };
+    let short = mask_of("short");
+    assert_eq!(short, mask_of("long"), "the mask must not track the length");
+    assert!(short.chars().all(|c| c == '\u{2022}'), "{short}");
+    assert!(short.chars().count() > 2, "{short}");
+}

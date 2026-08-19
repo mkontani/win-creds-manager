@@ -32,6 +32,12 @@ in [docs/FORMAT.md](docs/FORMAT.md); format changes are called out explicitly.
 
 ### Changed
 
+- `show` masks every non-empty secret with a fixed number of bullets; the mask
+  used to reveal the exact length of anything shorter than 12 characters.
+- `export` no longer fails when only the `settings.last_export` bookkeeping
+  write loses the race with another process (the export file is already
+  written); it prints a notice instead.
+- The `ALREADY_EXISTS` hint no longer suggests `-f/--force` for file paths.
 - `wcm slot rm` refuses to remove the last passphrase/recovery slot: a vault
   with only Windows Hello slots cannot be recovered after a PIN reset or TPM
   clear. Slots sharing a label are counted together. Duplicate slot labels are
@@ -45,6 +51,9 @@ in [docs/FORMAT.md](docs/FORMAT.md); format changes are called out explicitly.
 
 ### Security
 
+- stdin and import files are capped at 64 MiB (`INVALID_INPUT` above that).
+- The vault directory is fsynced after the atomic rename on unix, so a crash
+  right after a save cannot lose the directory entry.
 - Decrypted field values are zeroized when they are dropped (`Drop` for
   `FieldValue`), so the plaintext body does not linger in freed heap memory.
 - `import` validates every incoming item: item names and field keys go through

@@ -53,13 +53,48 @@ impl SecretInput {
     }
 }
 
-/// Reads all of stdin.
+/// Largest input wcm accepts from stdin or an import file (64 MiB).
+///
+/// The whole value is held in memory (and re-encrypted into the vault), so an
+/// endless pipe must not be able to exhaust it.
+pub const MAX_INPUT_BYTES: usize = 64 * 1024 * 1024;
+
+/// Error for input over [`MAX_INPUT_BYTES`].
+fn too_large(what: &str) -> Error {
+    Error::Invalid(format!("{what} is larger than 64 MiB"))
+}
+
+/// Reads all of stdin, up to [`MAX_INPUT_BYTES`].
 pub fn read_stdin() -> Result<Zeroizing<Vec<u8>>> {
     let mut buf = Zeroizing::new(Vec::new());
+    // One byte over the limit is enough to detect it.
+    let limit = MAX_INPUT_BYTES as u64 + 1;
     std::io::stdin()
         .lock()
+        .take(limit)
         .read_to_end(&mut buf)
         .map_err(|e| Error::Io(format!("stdin: {e}")))?;
+    if buf.len() > MAX_INPUT_BYTES {
+        return Err(too_large("input"));
+    }
+    Ok(buf)
+}
+
+/// Reads a file, refusing anything over [`MAX_INPUT_BYTES`].
+pub fn read_file_capped(path: &std::path::Path) -> Result<Vec<u8>> {
+    let meta =
+        std::fs::metadata(path).map_err(|e| Error::Io(format!("{}: {e}", path.display())))?;
+    if meta.len() > MAX_INPUT_BYTES as u64 {
+        return Err(too_large(&path.display().to_string()));
+    }
+    let mut buf = Vec::with_capacity(meta.len() as usize);
+    std::fs::File::open(path)
+        .and_then(|f| f.take(MAX_INPUT_BYTES as u64 + 1).read_to_end(&mut buf))
+        .map_err(|e| Error::Io(format!("{}: {e}", path.display())))?;
+    // The file may have grown between the metadata call and the read.
+    if buf.len() > MAX_INPUT_BYTES {
+        return Err(too_large(&path.display().to_string()));
+    }
     Ok(buf)
 }
 
@@ -248,6 +283,27 @@ mod tests {
             origin: SecretOrigin::Value,
         };
         assert_eq!(s.into_value(true), FieldValue::Bytes(b"abc".to_vec()));
+    }
+
+    #[test]
+    fn oversized_files_are_rejected() {
+        let dir = tempfile::tempdir().expect("tmp");
+        let p = dir.path().join("small");
+        std::fs::write(&p, b"hello").expect("write");
+        assert_eq!(read_file_capped(&p).expect("read"), b"hello");
+        assert!(matches!(
+            read_file_capped(&dir.path().join("missing")),
+            Err(Error::Io(_))
+        ));
+        // A sparse file over the cap is refused without being read.
+        let big = dir.path().join("big");
+        let f = std::fs::File::create(&big).expect("create");
+        f.set_len(MAX_INPUT_BYTES as u64 + 1).expect("set_len");
+        drop(f);
+        match read_file_capped(&big) {
+            Err(Error::Invalid(m)) => assert!(m.contains("64 MiB"), "{m}"),
+            other => panic!("unexpected {other:?}"),
+        }
     }
 
     #[test]

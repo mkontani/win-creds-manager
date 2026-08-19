@@ -93,7 +93,22 @@ pub fn write_atomic(path: &Path, data: &[u8]) -> Result<()> {
     }
     tmp.persist(path)
         .map_err(|e| Error::Io(format!("replace {}: {}", path.display(), e.error)))?;
+    sync_dir(&dir);
     Ok(())
+}
+
+/// Flushes the directory entry created by the rename (best effort).
+///
+/// Without it a crash right after `persist` can leave the directory pointing at
+/// neither the old nor the new file on some filesystems. Failures are ignored:
+/// not every platform allows opening a directory.
+fn sync_dir(dir: &Path) {
+    #[cfg(unix)]
+    if let Ok(f) = File::open(dir) {
+        let _ = f.sync_all();
+    }
+    #[cfg(not(unix))]
+    let _ = dir;
 }
 
 #[cfg(test)]

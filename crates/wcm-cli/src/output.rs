@@ -99,12 +99,19 @@ struct ErrorBody {
     exit: u8,
 }
 
+/// Number of bullets shown for any non-empty secret.
+pub const MASK_WIDTH: usize = 8;
+
 /// Masks a secret for display.
+///
+/// The width is fixed: a mask that tracked the real length would leak it for
+/// short secrets (a 4-character PIN was previously shown as four bullets).
+/// `len` only distinguishes empty from non-empty.
 pub fn mask(len: usize) -> String {
     if len == 0 {
         String::new()
     } else {
-        "•".repeat(len.min(12))
+        "•".repeat(MASK_WIDTH)
     }
 }
 
@@ -113,10 +120,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn mask_caps_length() {
+    fn mask_hides_the_length() {
         assert_eq!(mask(0), "");
-        assert_eq!(mask(3), "•••");
-        assert_eq!(mask(100).chars().count(), 12);
+        assert_eq!(mask(1), mask(3));
+        assert_eq!(mask(3), mask(100));
+        assert_eq!(mask(3).chars().count(), MASK_WIDTH);
     }
 
     #[test]

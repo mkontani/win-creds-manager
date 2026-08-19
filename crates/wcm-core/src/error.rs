@@ -83,7 +83,10 @@ impl Error {
     pub fn hint(&self) -> Option<String> {
         match self {
             Error::NotFound(_) => Some("run `wcm ls` to list stored items".into()),
-            Error::AlreadyExists(_) => Some("use `-f/--force` to overwrite".into()),
+            Error::AlreadyExists(_) => Some(
+                "use `-f/--force` to overwrite (items, slots) or choose another path (files)"
+                    .into(),
+            ),
             Error::NotInitialized(_) => Some("run `wcm init` first".into()),
             Error::AuthUnavailable(_) => Some(
                 "if the Windows Hello key is gone, run `wcm recover` with your recovery key; \

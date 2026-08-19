@@ -103,8 +103,7 @@ pub fn run(ctx: &Ctx, args: &ImportArgs) -> Result<()> {
     // Fail fast on the destination before touching the import file.
     ctx.vault.read_header()?;
     confirm_replace(ctx, args)?;
-    let bytes = std::fs::read(&args.file)
-        .map_err(|e| Error::Io(format!("{}: {e}", args.file.display())))?;
+    let bytes = crate::secrets::read_file_capped(&args.file)?;
     let incoming = if is_vault_file(&bytes) {
         read_encrypted(ctx, args)?
     } else {

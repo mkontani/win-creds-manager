@@ -133,7 +133,17 @@ pub fn run(ctx: &Ctx, args: &ExportArgs) -> Result<()> {
             last_export: Some(now.clone()),
         }))
     })?;
-    ctx.save(&mut v)?;
+    // The export file is already written. `settings.last_export` is only
+    // bookkeeping, so losing the race against another writer must not turn a
+    // successful export into a failed command.
+    match ctx.save(&mut v) {
+        Ok(()) => {}
+        Err(Error::Locked) => ctx.out.notice(
+            "note: the export was written, but another wcm process changed the vault in the \
+             meantime; the last-export timestamp was not recorded",
+        ),
+        Err(e) => return Err(e),
+    }
 
     if report.file.is_none() {
         // The document itself was the stdout payload.
