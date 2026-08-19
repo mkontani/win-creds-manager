@@ -68,7 +68,9 @@ fn with_trailing_newline(bytes: &[u8]) -> Zeroizing<Vec<u8>> {
 
 /// Spawns `ssh_add args...` (no shell), feeds `stdin_bytes`, waits.
 fn run_ssh_add(ssh_add: &Path, args: &[String], stdin_bytes: &[u8]) -> Result<()> {
-    let mut child = Command::new(ssh_add)
+    let mut cmd = Command::new(ssh_add);
+    crate::prompt::scrub_secret_env(&mut cmd);
+    let mut child = cmd
         .args(args)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())

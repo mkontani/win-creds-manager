@@ -73,6 +73,7 @@ fn spawn_unclip(timeout_secs: u64, hash: &str) -> Result<()> {
     let exe = std::env::current_exe()
         .map_err(|e| Error::Helper(format!("cannot locate own executable: {e}")))?;
     let mut cmd = Command::new(exe);
+    crate::prompt::scrub_secret_env(&mut cmd);
     cmd.args([
         "unclip",
         "--timeout",

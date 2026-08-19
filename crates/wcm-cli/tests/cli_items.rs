@@ -248,6 +248,29 @@ fn get_clip_and_out_file_require_exactly_one_name() {
     assert!(!f.exists());
 }
 
+#[cfg(unix)]
+#[test]
+fn get_out_file_is_owner_only() {
+    use std::os::unix::fs::PermissionsExt;
+    let (v, _) = TestVault::initialized();
+    add_stdin(&v, "a", "va", &[]);
+    let f = v.dir.path().join("secret.txt");
+    // Pre-create a world-readable file: the mode must be tightened, not inherited.
+    std::fs::write(&f, b"old").expect("write");
+    std::fs::set_permissions(&f, std::fs::Permissions::from_mode(0o644)).expect("chmod");
+    v.cmd()
+        .args(["get", "a", "--out-file"])
+        .arg(&f)
+        .assert()
+        .success();
+    assert_eq!(std::fs::read(&f).expect("read"), b"va");
+    let mode = std::fs::metadata(&f).expect("meta").permissions().mode() & 0o777;
+    assert_eq!(
+        mode, 0o600,
+        "get --out-file must be owner-only, got {mode:o}"
+    );
+}
+
 #[test]
 fn get_out_file_io_error_is_exit_10() {
     let (v, _) = TestVault::initialized();

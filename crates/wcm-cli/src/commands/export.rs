@@ -100,7 +100,7 @@ pub fn run(ctx: &Ctx, args: &ExportArgs) -> Result<()> {
         let doc = PlainExport::from_body(&v.body, &now).to_json()?;
         match &out_path {
             Some(p) => {
-                write_new_file(p, doc.as_bytes())?;
+                crate::outfile::write_new(p, doc.as_bytes())?;
                 ExportReport {
                     file: Some(p.display().to_string()),
                     items,
@@ -154,22 +154,6 @@ pub fn run(ctx: &Ctx, args: &ExportArgs) -> Result<()> {
     ))
 }
 
-/// Writes `data` to a file that must not exist yet.
-fn write_new_file(path: &Path, data: &[u8]) -> Result<()> {
-    use std::io::Write;
-    let mut f = std::fs::OpenOptions::new()
-        .write(true)
-        .create_new(true)
-        .open(path)
-        .map_err(|e| match e.kind() {
-            std::io::ErrorKind::AlreadyExists => Error::AlreadyExists(path.display().to_string()),
-            _ => Error::Io(format!("{}: {e}", path.display())),
-        })?;
-    f.write_all(data)
-        .and_then(|_| f.sync_all())
-        .map_err(|e| Error::Io(format!("{}: {e}", path.display())))
-}
-
 /// Creates a fresh vault at `path` holding `body`, sealed by one passphrase slot.
 fn write_encrypted_export(
     ctx: &Ctx,
@@ -218,15 +202,10 @@ mod tests {
     }
 
     #[test]
-    fn write_new_file_refuses_existing() {
+    fn ensure_absent_refuses_existing() {
         let dir = tempfile::tempdir().expect("tmp");
         let p = dir.path().join("x.json");
-        write_new_file(&p, b"a").expect("write");
-        assert!(matches!(
-            write_new_file(&p, b"b"),
-            Err(Error::AlreadyExists(_))
-        ));
-        assert_eq!(std::fs::read(&p).expect("read"), b"a");
+        std::fs::write(&p, b"a").expect("write");
         assert!(matches!(ensure_absent(&p), Err(Error::AlreadyExists(_))));
         assert!(ensure_absent(&dir.path().join("none")).is_ok());
     }

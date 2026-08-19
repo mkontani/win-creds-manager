@@ -4,6 +4,7 @@ mod cli;
 mod clip;
 mod commands;
 mod context;
+mod outfile;
 mod output;
 mod prompt;
 mod secrets;

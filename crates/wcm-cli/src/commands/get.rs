@@ -89,7 +89,8 @@ fn is_binary(v: &FieldValue) -> bool {
 }
 
 fn write_file(ctx: &Ctx, path: &Path, bytes: &[u8]) -> Result<()> {
-    std::fs::write(path, bytes).map_err(|e| Error::Io(format!("{}: {e}", path.display())))?;
+    // Secrets: owner-only, even when the path already existed (see `outfile`).
+    crate::outfile::write_truncate(path, bytes)?;
     ctx.out.notice(&format!(
         "wrote {} bytes to {}",
         bytes.len(),

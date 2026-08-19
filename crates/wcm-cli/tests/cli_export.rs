@@ -964,3 +964,26 @@ fn recover_that_cannot_save_leaves_the_vault_openable() {
     let e = dump(&v, &[]);
     assert_eq!(names(&e), vec!["a"], "the vault still opens as before");
 }
+
+#[cfg(unix)]
+#[test]
+fn plaintext_export_file_is_owner_only() {
+    use std::os::unix::fs::PermissionsExt;
+    let (v, _) = TestVault::initialized();
+    import_items(&v, "in.json", vec![password("a", "a1")], &[]);
+    let out_path = v.dir.path().join("plain.json");
+    v.cmd()
+        .args(["export", "--plaintext", "--i-know", "-o"])
+        .arg(&out_path)
+        .assert()
+        .success();
+    let mode = std::fs::metadata(&out_path)
+        .expect("meta")
+        .permissions()
+        .mode()
+        & 0o777;
+    assert_eq!(
+        mode, 0o600,
+        "plaintext export must be owner-only, got {mode:o}"
+    );
+}

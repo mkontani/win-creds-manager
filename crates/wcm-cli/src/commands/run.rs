@@ -216,7 +216,10 @@ pub fn run(ctx: &Ctx, args: &RunArgs) -> Result<()> {
     // `env` (and the vault body) is dropped before the child outlives us; the
     // child only ever sees the resolved values.
 
-    let status = Command::new(program)
+    let mut cmd = Command::new(program);
+    // The child gets the resolved secrets — never wcm's own passphrase variables.
+    crate::prompt::scrub_secret_env(&mut cmd);
+    let status = cmd
         .args(rest)
         .envs(env.iter().map(|(k, v)| (k.as_str(), v.as_str())))
         .stdin(Stdio::inherit())

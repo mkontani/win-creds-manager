@@ -14,6 +14,24 @@ use wcm_core::{Error, Result};
 /// Environment variable supplying the passphrase / recovery key non-interactively.
 pub const PASSPHRASE_ENV: &str = "WCM_PASSPHRASE";
 
+/// Every environment variable that may carry a vault secret.
+///
+/// Child processes (`run`, `ssh-add`, `unclip`) must never inherit these: they
+/// would hand any command wcm launches a working key to the vault.
+pub const SECRET_ENV_VARS: [&str; 3] = [
+    PASSPHRASE_ENV,
+    crate::commands::export::EXPORT_PASSPHRASE_ENV,
+    crate::commands::slot::NEW_PASSPHRASE_ENV,
+];
+
+/// Removes [`SECRET_ENV_VARS`] from the environment of `cmd`.
+pub fn scrub_secret_env(cmd: &mut std::process::Command) -> &mut std::process::Command {
+    for var in SECRET_ENV_VARS {
+        cmd.env_remove(var);
+    }
+    cmd
+}
+
 /// CLI prompter.
 #[derive(Clone, Debug)]
 pub struct CliPrompter {
@@ -126,6 +144,26 @@ mod tests {
             normalize_secret(SecretString::from("WCM1-oops".to_string())),
             Err(Error::Invalid(_))
         ));
+    }
+
+    #[test]
+    fn secret_env_vars_are_removed_from_children() {
+        assert!(SECRET_ENV_VARS.contains(&PASSPHRASE_ENV));
+        assert_eq!(SECRET_ENV_VARS.len(), 3);
+        let mut c = std::process::Command::new("true");
+        c.env("WCM_PASSPHRASE", "x").env("KEEP", "y");
+        scrub_secret_env(&mut c);
+        let removed: Vec<_> = c
+            .get_envs()
+            .filter(|(_, v)| v.is_none())
+            .map(|(k, _)| k.to_string_lossy().into_owned())
+            .collect();
+        for var in SECRET_ENV_VARS {
+            assert!(removed.contains(&var.to_string()), "{var} not removed");
+        }
+        assert!(c
+            .get_envs()
+            .any(|(k, v)| k == "KEEP" && v == Some("y".as_ref())));
     }
 
     #[test]

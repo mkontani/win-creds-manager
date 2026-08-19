@@ -515,6 +515,35 @@ fn run_injects_secrets_as_env_vars() {
 
 #[cfg(unix)]
 #[test]
+fn run_does_not_leak_passphrase_env_to_the_child() {
+    let (v, _) = TestVault::initialized();
+    v.insert_items(vec![non_ssh_item("login")]);
+    let out = wcm(&v)
+        .env("WCM_EXPORT_PASSPHRASE", "export-secret")
+        .env("WCM_NEW_PASSPHRASE", "new-secret")
+        .args([
+            "run",
+            "--env",
+            "A=login",
+            "--",
+            "sh",
+            "-c",
+            "printf '%s|%s|%s|%s' \"$WCM_PASSPHRASE\" \"$WCM_EXPORT_PASSPHRASE\" \
+             \"$WCM_NEW_PASSPHRASE\" \"$A\"",
+        ])
+        .output()
+        .expect("run");
+    assert!(
+        out.status.success(),
+        "stderr: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    // The mapped secret is there; the vault passphrases are not.
+    assert_eq!(String::from_utf8_lossy(&out.stdout), "|||hunter2");
+}
+
+#[cfg(unix)]
+#[test]
 fn run_passes_child_exit_code_through() {
     let (v, _) = TestVault::initialized();
     v.insert_items(vec![non_ssh_item("login")]);

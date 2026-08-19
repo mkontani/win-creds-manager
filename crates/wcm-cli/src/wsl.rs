@@ -318,7 +318,9 @@ fn find_ssh_add(explicit: Option<&str>, env: &Env) -> Option<PathBuf> {
 }
 
 fn pipe_into_ssh_add(ssh_add: &Path, args: &[String], key: &[u8]) -> Result<(), String> {
-    let mut child = Command::new(ssh_add)
+    let mut cmd = Command::new(ssh_add);
+    crate::prompt::scrub_secret_env(&mut cmd);
+    let mut child = cmd
         .args(args)
         .stdin(Stdio::piped())
         .stdout(Stdio::inherit())

@@ -19,6 +19,11 @@ in [docs/FORMAT.md](docs/FORMAT.md); format changes are called out explicitly.
 
 ### Security
 
+- `wcm run`, the `ssh-add` helper and the detached `wcm unclip` no longer pass
+  `WCM_PASSPHRASE`, `WCM_EXPORT_PASSPHRASE` or `WCM_NEW_PASSPHRASE` on to the
+  child process.
+- Plaintext exports and `get --out-file` are created with mode `0600` on unix
+  (and an existing target file is tightened) instead of inheriting the umask.
 - `rekey`, `recover` and `slot rm` delete `vault.wcm.bak` after saving. The
   backup is a full copy of the previous generation and still opens with the key
   material those commands revoke (documented in [docs/SECURITY.md](docs/SECURITY.md)).
