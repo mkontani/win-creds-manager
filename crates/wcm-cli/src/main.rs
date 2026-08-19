@@ -8,6 +8,7 @@ mod output;
 mod prompt;
 mod secrets;
 mod ssh;
+mod sshkey;
 #[cfg(target_os = "linux")]
 mod wsl;
 
