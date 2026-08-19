@@ -127,6 +127,25 @@ impl Ctx {
         v.save(&self.vault)
     }
 
+    /// Saves the vault and removes `<vault>.bak`.
+    ///
+    /// The atomic write keeps the previous generation as `.bak`; after a key
+    /// change (`rekey`, `recover`, `slot rm`) that copy still opens with key
+    /// material the user just revoked, so those commands drop it.
+    pub fn save_dropping_backup(&self, v: &mut UnlockedVault) -> Result<()> {
+        self.save(v)?;
+        let bak = wcm_core::vault::file::backup_path(&self.vault.path);
+        match std::fs::remove_file(&bak) {
+            Ok(()) => {}
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => self.out.notice(&format!(
+                "note: could not remove the stale backup {}: {e}",
+                bak.display()
+            )),
+        }
+        Ok(())
+    }
+
     /// Argon2 parameters honoring the hidden `--argon2-test-params` flag.
     pub fn argon2_params(test: bool) -> Argon2Params {
         if test {

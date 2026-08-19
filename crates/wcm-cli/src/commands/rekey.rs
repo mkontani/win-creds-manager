@@ -113,7 +113,7 @@ pub fn run(ctx: &Ctx, args: &RekeyArgs) -> Result<()> {
         recovery_key: recovery_key.as_ref().map(RecoveryKey::display),
     };
     v = v.with_dek(new_dek).with_slots(new_slots);
-    ctx.save(&mut v)?;
+    ctx.save_dropping_backup(&mut v)?;
 
     if ctx.out.json {
         return ctx.out.json(&report);

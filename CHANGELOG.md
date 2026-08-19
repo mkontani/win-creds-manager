@@ -9,6 +9,20 @@ in [docs/FORMAT.md](docs/FORMAT.md); format changes are called out explicitly.
 
 ## [Unreleased]
 
+### Fixed
+
+- `recover` and `slot rm` no longer destroy the Windows Hello credential of a
+  removed slot before the vault that replaces it has been saved: the external
+  state is now destroyed only after a successful write, and never when a
+  remaining slot still references the same credential. A failed re-seal or save
+  used to leave the vault unopenable.
+
+### Security
+
+- `rekey`, `recover` and `slot rm` delete `vault.wcm.bak` after saving. The
+  backup is a full copy of the previous generation and still opens with the key
+  material those commands revoke (documented in [docs/SECURITY.md](docs/SECURITY.md)).
+
 ## [0.1.0] - 2026-08-19
 
 ### Added

@@ -138,19 +138,28 @@ pub fn seal_hello_slot(
     Ok(slot)
 }
 
-/// Best-effort removal of external state (Hello credential) for `slot`, unless
-/// another remaining Hello slot still uses the same credential.
-pub fn destroy_slot_state(ctx: &Ctx, slot: &KeySlot, remaining: &[KeySlot]) {
-    let SlotParams::Hello {
-        cred_name, dpapi, ..
-    } = &slot.params
-    else {
+/// Whether the Hello credential backing `slot` is still referenced by `kept`.
+///
+/// Destroying it would break those slots, so the cleanup is skipped. Non-Hello
+/// slots have no external state and are never "shared".
+pub fn credential_shared(slot: &KeySlot, kept: &[KeySlot]) -> bool {
+    let SlotParams::Hello { cred_name, .. } = &slot.params else {
+        return false;
+    };
+    kept.iter().any(
+        |s| matches!(&s.params, SlotParams::Hello { cred_name: other, .. } if other == cred_name),
+    )
+}
+
+/// Best-effort removal of external state (Hello credential) for `slot`.
+///
+/// `kept` are the slots that survive the change **as saved on disk**; a
+/// credential one of them still uses is left alone.
+pub fn destroy_slot_state(ctx: &Ctx, slot: &KeySlot, kept: &[KeySlot]) {
+    let SlotParams::Hello { dpapi, .. } = &slot.params else {
         return;
     };
-    let shared = remaining.iter().any(
-        |s| matches!(&s.params, SlotParams::Hello { cred_name: other, .. } if other == cred_name),
-    );
-    if shared {
+    if credential_shared(slot, kept) {
         return;
     }
     if let Err(e) = ctx.hello_backend(false, *dpapi).destroy(&slot.params) {
@@ -281,11 +290,13 @@ fn rm(ctx: &Ctx, args: &SlotRmArgs) -> Result<()> {
         .iter()
         .cloned()
         .partition(|s| s.label == args.label);
-    for s in &removed {
-        destroy_slot_state(ctx, s, &remaining);
-    }
     v = v.with_slots(remaining);
-    ctx.save(&mut v)?;
+    // Save first: external state is only destroyed once the vault that no
+    // longer needs it is durably on disk.
+    ctx.save_dropping_backup(&mut v)?;
+    for s in &removed {
+        destroy_slot_state(ctx, s, &v.header.slots);
+    }
 
     let report = RmReport {
         removed: args.label.clone(),
@@ -359,6 +370,21 @@ mod tests {
             check_removable(&slots[..1], "recovery"),
             Err(Error::Invalid(_))
         ));
+    }
+
+    #[test]
+    fn credentials_still_referenced_are_kept() {
+        let old = hello_slot(1, "hello", "wcm-vault-1");
+        // The replacement slot derives the same credential name from the vault id.
+        let new = hello_slot(2, "hello", "wcm-vault-1");
+        assert!(credential_shared(&old, std::slice::from_ref(&new)));
+        assert!(!credential_shared(
+            &old,
+            &[hello_slot(2, "hello", "other"), pass_slot(3, "recovery")]
+        ));
+        assert!(!credential_shared(&old, &[]));
+        // Passphrase slots have no external state.
+        assert!(!credential_shared(&pass_slot(1, "recovery"), &[old]));
     }
 
     #[test]

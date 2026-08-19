@@ -44,7 +44,7 @@ trusting the tool with anything important. The on-disk details are in
 | **Header / slot tampering** — swapping the stored public key, challenge, Argon2 parameters, slot ids, cipher id | The header is the body's AAD; slots carry their own AAD (`vault_id ‖ id ‖ kind`). Any change fails closed with exit 8 (`INTEGRITY`). |
 | **Silent change of the signature scheme** (e.g. a future Windows build returning RSA-PSS, which is randomized) | The signature is verified against the stored SPKI with PKCS#1 v1.5 *before* it touches the KDF. Anything else is rejected; a wrong KEK is never derived and never used to overwrite the vault. |
 | **Weak or reused passphrase material** | Argon2id 64 MiB/3 passes per slot, 32-byte random salt per slot, HKDF domain separation per slot kind and vault id. The recovery key is 144 random bits. |
-| **Partial writes / crashes during save** | Temp file + fsync + atomic rename; the previous generation is kept as `vault.wcm.bak`. |
+| **Partial writes / crashes during save** | Temp file + fsync (file *and* directory on unix) + atomic rename; the previous generation is kept as `vault.wcm.bak` (see [The `.bak` file](#the-bak-file)). |
 | **Two wcm processes racing** | Advisory lock on `vault.wcm.lock` plus a generation check: the second writer gets exit 9 (`LOCKED`) instead of clobbering. |
 | **Secrets in terminal scrollback / logs** | Secret values are masked in `show` (use `--reveal`), never printed by `ls`, never included in stderr diagnostics or JSON error envelopes. `--clip` clears the clipboard after a timeout. Binary values are refused on a TTY (`--out-file`). |
 
@@ -101,7 +101,8 @@ trusting the tool with anything important. The on-disk details are in
 * Prefer `--stdin`, `--file` or the interactive prompt over the hidden
   `--value` flag (command-line arguments are visible in process listings).
 * Back up `vault.wcm` freely; it is useless without a key slot secret. Keep
-  `vault.wcm.bak` as well if you want one generation of history.
+  `vault.wcm.bak` as well if you want one generation of history — but read
+  [The `.bak` file](#the-bak-file) first.
 * On a shared machine, set `WCM_HELLO_FOCUS=0` only if the focus helper
   misbehaves; it exists so the Hello dialog is not hidden behind other windows
   when wcm is launched from WSL or a background terminal.
@@ -110,6 +111,24 @@ trusting the tool with anything important. The on-disk details are in
   (fresh DEK, all slots re-sealed) and `wcm slot rm`/`slot add` to replace it.
 * Use `wcm doctor` to confirm `hw_backed=true`, an interactive session, and
   that `WCM_PASSPHRASE` is not set.
+
+### The `.bak` file
+
+Every write copies the previous generation of the vault to `vault.wcm.bak`
+before the new file is put in place. That copy is a **complete vault**: it is
+encrypted, but it opens with the key material that was valid *at the time it
+was written* — the old recovery key, the old passphrase, the old Hello slot.
+
+Consequences:
+
+* After `wcm rekey`, `wcm recover` or `wcm slot rm`, a `.bak` written by an
+  earlier command would still open with the key material you just revoked.
+  Those three commands therefore **delete `vault.wcm.bak`** after they have
+  saved successfully; the next ordinary write creates a fresh one under the
+  new key material.
+* Items removed with `wcm rm` are still readable in the `.bak` until the next
+  write replaces it. Delete the file yourself if that matters.
+* Treat `.bak` exactly like `vault.wcm` when copying, syncing or shredding.
 
 ## 5. Reporting a vulnerability
 

@@ -859,3 +859,108 @@ fn slot_ls_add_rm_lifecycle() {
     // Uninitialized vault.
     TestVault::new().cmd().args(["slot", "ls"]).assert().code(5);
 }
+
+// ------------------------------------------------- key material / .bak safety
+
+/// Path of the previous-generation backup next to the vault.
+fn backup_path(v: &TestVault) -> PathBuf {
+    v.dir.path().join("vault.wcm.bak")
+}
+
+#[test]
+fn key_rotating_commands_remove_the_stale_backup() {
+    let (v, key) = TestVault::initialized();
+    import_items(&v, "in.json", vec![password("a", "a1")], &[]);
+    assert!(
+        backup_path(&v).exists(),
+        "an ordinary write keeps the previous generation in .bak"
+    );
+
+    // rekey: the .bak still opens with the OLD recovery key → it must go.
+    let out = v
+        .cmd()
+        .args(["--json", "rekey", "--argon2-test-params"])
+        .output()
+        .expect("rekey");
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let new_key = json(&out)["recovery_key"]
+        .as_str()
+        .expect("recovery_key")
+        .to_string();
+    assert!(!backup_path(&v).exists(), "rekey must drop the stale .bak");
+    assert_ne!(new_key, key);
+
+    // slot rm
+    v.cmd()
+        .env("WCM_NEW_PASSPHRASE", "second-pass")
+        .args([
+            "slot",
+            "add",
+            "--passphrase",
+            "--label",
+            "second",
+            "--argon2-test-params",
+        ])
+        .assert()
+        .success();
+    assert!(backup_path(&v).exists());
+    v.cmd()
+        .args(["slot", "rm", "-f", "second"])
+        .assert()
+        .success();
+    assert!(
+        !backup_path(&v).exists(),
+        "slot rm must drop the stale .bak"
+    );
+
+    // recover
+    import_items(&v, "in2.json", vec![password("b", "b1")], &[]);
+    assert!(backup_path(&v).exists());
+    v.cmd()
+        .env("WCM_PASSPHRASE", &new_key)
+        .env("WCM_NEW_PASSPHRASE", "np")
+        .args(["recover", "--no-hello", "--argon2-test-params"])
+        .assert()
+        .success();
+    assert!(
+        !backup_path(&v).exists(),
+        "recover must drop the stale .bak"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn recover_that_cannot_save_leaves_the_vault_openable() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let (v, key) = TestVault::initialized();
+    import_items(&v, "in.json", vec![password("a", "a1")], &[]);
+    let before = slot_labels(&v);
+
+    // A read-only directory makes the atomic write (temp file) fail *after* the
+    // new slot has been sealed — the point where the old key material must
+    // still be intact.
+    let dir = v.dir.path();
+    let mode = std::fs::metadata(dir).expect("meta").permissions().mode();
+    std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o500)).expect("chmod");
+    let out = v
+        .cmd()
+        .env("WCM_PASSPHRASE", &key)
+        .env("WCM_NEW_PASSPHRASE", "np")
+        .args(["recover", "--no-hello", "--argon2-test-params"])
+        .output()
+        .expect("run recover");
+    std::fs::set_permissions(dir, std::fs::Permissions::from_mode(mode)).expect("restore");
+
+    assert!(
+        !out.status.success(),
+        "recover must fail when the vault cannot be written"
+    );
+    assert_eq!(slot_labels(&v), before, "the slots must be unchanged");
+    let e = dump(&v, &[]);
+    assert_eq!(names(&e), vec!["a"], "the vault still opens as before");
+}

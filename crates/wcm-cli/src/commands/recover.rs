@@ -87,12 +87,6 @@ pub fn run(ctx: &Ctx, args: &RecoverArgs) -> Result<()> {
     let mut v: UnlockedVault = ctx.vault.unlock(&resolver, &uctx, preferred.as_deref())?;
 
     let (removed, remaining) = partition_slots(&v.header.slots, new_label);
-    // Best-effort cleanup of stale Hello credentials *before* enrolling the new
-    // one (the credential name is derived from the vault id, so a new Hello slot
-    // would otherwise share — and later lose — the credential).
-    for s in &removed {
-        destroy_slot_state(ctx, s, &remaining);
-    }
     let next_id = first_free_id(&remaining)?;
     let added = match target {
         Target::Hello => seal_hello_slot(ctx, &v, next_id, new_label, !args.no_dpapi)?,
@@ -110,7 +104,15 @@ pub fn run(ctx: &Ctx, args: &RecoverArgs) -> Result<()> {
         .chain(std::iter::once(added))
         .collect();
     v = v.with_slots(slots);
-    ctx.save(&mut v)?;
+    // Never destroy external state before the vault that no longer needs it is
+    // durably on disk: if the save fails, the removed slots still open the vault.
+    ctx.save_dropping_backup(&mut v)?;
+    // The new Hello credential is derived from the vault id, so it usually
+    // carries the same name as the one just dropped: `destroy_slot_state` skips
+    // credentials still referenced by a saved slot.
+    for s in &removed {
+        destroy_slot_state(ctx, s, &v.header.slots);
+    }
 
     if ctx.out.json {
         return ctx.out.json(&report);
