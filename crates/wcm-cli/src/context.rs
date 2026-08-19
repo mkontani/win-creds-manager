@@ -13,7 +13,7 @@ use wcm_hello::{DpapiEnvelope, HelloOptions};
 
 use crate::cli::Cli;
 use crate::output::Output;
-use crate::prompt::CliPrompter;
+use crate::prompt::{passphrase_from_env, CliPrompter};
 
 /// Environment variable overriding the default data directory (tests).
 pub const DATA_DIR_ENV: &str = "WCM_DATA_DIR";
@@ -77,6 +77,9 @@ impl Ctx {
     pub fn passphrase_backend(&self, label: &str, params: Argon2Params) -> PassphraseBackend {
         let mut b = PassphraseBackend::prompting(label);
         b.params = params;
+        // `WCM_PASSPHRASE` must work even with `--no-input` (automation, tests);
+        // a malformed value is left to the prompt path, which reports the error.
+        b.secret = passphrase_from_env().ok().flatten();
         b
     }
 
