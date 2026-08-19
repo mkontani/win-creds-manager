@@ -7,7 +7,9 @@
 use secrecy::SecretString;
 use serde::Serialize;
 use wcm_core::slot::passphrase::PassphraseBackend;
-use wcm_core::slot::{seal_slot, Availability, IdentityEnvelope, KeySlot, Prompter, SlotParams};
+use wcm_core::slot::{
+    seal_slot, Availability, IdentityEnvelope, KeySlot, Prompter, SlotKind, SlotParams,
+};
 use wcm_core::vault::UnlockedVault;
 use wcm_core::{Error, Result};
 
@@ -308,17 +310,29 @@ fn rm(ctx: &Ctx, args: &SlotRmArgs) -> Result<()> {
         .line(&format!("Removed key slot '{}'", report.removed))
 }
 
-/// Validates that `label` exists and is not the last slot.
+/// Validates that `label` exists, is not the last slot, and does not take the
+/// last passphrase/recovery slot with it.
+///
+/// A vault whose only slot is a Windows Hello slot is unrecoverable: a PIN
+/// reset, TPM clear or a new machine destroys the key and there is nothing left
+/// to `wcm recover` with.
 fn check_removable(slots: &[KeySlot], label: &str) -> Result<()> {
     if !slots.iter().any(|s| s.label == label) {
         return Err(Error::Invalid(format!(
             "no key slot labelled '{label}' (see `wcm slot ls`)"
         )));
     }
-    if slots.len() <= 1 {
+    // Removal is by label, so several slots may go at once.
+    let remaining: Vec<&KeySlot> = slots.iter().filter(|s| s.label != label).collect();
+    if remaining.is_empty() {
         return Err(Error::Invalid(
             "cannot remove the last remaining key slot (add another slot first)".into(),
         ));
+    }
+    if !remaining.iter().any(|s| s.kind() == SlotKind::Passphrase) {
+        return Err(Error::Invalid(format!(
+            "removing key slot '{label}' would leave only Windows Hello slots, and a lost              Hello key could then never be recovered; add a passphrase/recovery slot first:              wcm slot add --passphrase"
+        )));
     }
     Ok(())
 }
@@ -370,6 +384,43 @@ mod tests {
             check_removable(&slots[..1], "recovery"),
             Err(Error::Invalid(_))
         ));
+    }
+
+    #[test]
+    fn last_passphrase_slot_cannot_be_removed() {
+        let slots = vec![hello_slot(1, "hello", "c"), pass_slot(2, "recovery")];
+        let err = check_removable(&slots, "recovery").expect_err("must refuse");
+        match err {
+            Error::Invalid(m) => assert!(m.contains("slot add --passphrase"), "{m}"),
+            other => panic!("unexpected {other:?}"),
+        }
+        // Removing the Hello slot instead is fine.
+        assert!(check_removable(&slots, "hello").is_ok());
+        // Another passphrase slot survives → allowed.
+        let with_spare = vec![
+            hello_slot(1, "hello", "c"),
+            pass_slot(2, "recovery"),
+            pass_slot(3, "passphrase"),
+        ];
+        assert!(check_removable(&with_spare, "recovery").is_ok());
+    }
+
+    #[test]
+    fn slots_sharing_a_label_are_counted_together() {
+        // Removal is by label: both `dup` slots go, so only the Hello slot
+        // would remain — refuse even though `slots.len()` is 3.
+        let slots = vec![
+            hello_slot(1, "hello", "c"),
+            pass_slot(2, "dup"),
+            pass_slot(3, "dup"),
+        ];
+        assert!(matches!(
+            check_removable(&slots, "dup"),
+            Err(Error::Invalid(_))
+        ));
+        let only_dups = vec![pass_slot(1, "dup"), pass_slot(2, "dup")];
+        let err = check_removable(&only_dups, "dup").expect_err("must refuse");
+        assert!(err.to_string().contains("last remaining"), "{err}");
     }
 
     #[test]

@@ -150,6 +150,14 @@ impl Header {
         if ids.len() != self.slots.len() {
             return Err(Error::Integrity("duplicate slot ids".into()));
         }
+        // Labels address slots (`--slot`, `slot rm`): duplicates make every such
+        // command ambiguous, so they are a header defect, not a user error.
+        let mut labels: Vec<&str> = self.slots.iter().map(|s| s.label.as_str()).collect();
+        labels.sort_unstable();
+        labels.dedup();
+        if labels.len() != self.slots.len() {
+            return Err(Error::Integrity("duplicate slot labels".into()));
+        }
         Ok(())
     }
 }
@@ -226,6 +234,12 @@ mod tests {
         assert!(matches!(h.encode(), Err(Error::Integrity(_))));
         h.slots = vec![slot(1), slot(1)];
         assert!(matches!(h.encode(), Err(Error::Integrity(_))));
+        // Same label on two different slots: `--slot LABEL` would be ambiguous.
+        let mut dup = slot(2);
+        dup.label = slot(1).label;
+        h.slots = vec![slot(1), dup];
+        let err = h.encode().expect_err("duplicate labels");
+        assert!(err.to_string().contains("duplicate slot labels"), "{err}");
         h.slots = vec![slot(1)];
         h.body_cipher = "aes".into();
         assert!(matches!(h.encode(), Err(Error::Integrity(_))));

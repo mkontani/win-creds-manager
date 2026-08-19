@@ -23,6 +23,10 @@ in [docs/FORMAT.md](docs/FORMAT.md); format changes are called out explicitly.
 
 ### Changed
 
+- `wcm slot rm` refuses to remove the last passphrase/recovery slot: a vault
+  with only Windows Hello slots cannot be recovered after a PIN reset or TPM
+  clear. Slots sharing a label are counted together. Duplicate slot labels are
+  now rejected by the header validation (exit 8).
 - `wcm get` accepts exactly one item name together with `--raw`, `-n`,
   `--clip` or `--out-file`; several values used to be concatenated without a
   separator. `--clip` and `--out-file` are now mutually exclusive.
