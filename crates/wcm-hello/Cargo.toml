@@ -10,13 +10,15 @@ authors.workspace = true
 
 [features]
 default = []
-test-util = []
+test-util = ["dep:rsa", "dep:sha2", "wcm-core/test-util"]
 
 [dependencies]
 wcm-core.workspace = true
-thiserror.workspace = true
+serde.workspace = true
 zeroize.workspace = true
 rand.workspace = true
+rsa = { workspace = true, optional = true }
+sha2 = { workspace = true, optional = true }
 
 [target.'cfg(windows)'.dependencies]
 windows = { workspace = true, features = [
@@ -35,6 +37,7 @@ windows = { workspace = true, features = [
 [dev-dependencies]
 rsa.workspace = true
 sha2.workspace = true
+wcm-core = { workspace = true, features = ["test-util"] }
 
 [lints]
 workspace = true

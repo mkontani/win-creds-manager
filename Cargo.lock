@@ -1737,8 +1737,8 @@ version = "0.1.0"
 dependencies = [
  "rand",
  "rsa",
+ "serde",
  "sha2",
- "thiserror",
  "wcm-core",
  "windows",
  "zeroize",
