@@ -5,5 +5,6 @@
 
 pub mod crypto;
 pub mod error;
+pub mod slot;
 
 pub use error::{Error, Result};
