@@ -66,7 +66,7 @@ fn fake_ssh_add(dir: &Path) -> PathBuf {
         "fake-ssh-add",
         r#"#!/bin/sh
 printf 'ARGS:%s\n' "$*" > "$FAKE_OUT/ssh-add.args"
-cat > "$FAKE_OUT/ssh-add.stdin"
+/bin/cat > "$FAKE_OUT/ssh-add.stdin"
 exit "${FAKE_SSH_ADD_RC:-0}"
 "#,
     )
@@ -375,7 +375,7 @@ fn ssh_add_error_paths() {
         .assert()
         .success()
         .stdout(predicate::str::contains("ssh-ed25519 AAAAC3 comment"));
-    assert!(read(tmp.path(), "ssh-add.args").contains("-d -")); // unchanged from the earlier run
+    assert!(read(tmp.path(), "ssh-add.args").contains("ARGS:-")); // unchanged from the "ssh-add fails" run above
 }
 
 #[test]
