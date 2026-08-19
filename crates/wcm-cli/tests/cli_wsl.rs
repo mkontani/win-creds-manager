@@ -132,8 +132,12 @@ fn missing_windows_exe_is_127() {
         .arg("version")
         .assert()
         .code(127)
-        .stderr(predicate::str::contains("error: wcm.exe not found from WSL"))
-        .stderr(predicate::str::contains("WCM_WINDOWS_EXE=/nonexistent/wcm.exe does not exist"));
+        .stderr(predicate::str::contains(
+            "error: wcm.exe not found from WSL",
+        ))
+        .stderr(predicate::str::contains(
+            "WCM_WINDOWS_EXE=/nonexistent/wcm.exe does not exist",
+        ));
     let out = proxy_cmd(tmp.path())
         .env("WCM_WINDOWS_EXE", "/nonexistent/wcm.exe")
         .args(["--json", "version"])
@@ -143,7 +147,10 @@ fn missing_windows_exe_is_127() {
     let e = json_err(&out);
     assert_eq!(e["error"]["code"], "WSL_EXE_NOT_FOUND");
     assert_eq!(e["error"]["exit"], 127);
-    assert!(e["error"]["hint"].as_str().expect("hint").contains("docs/WSL.md"));
+    assert!(e["error"]["hint"]
+        .as_str()
+        .expect("hint")
+        .contains("docs/WSL.md"));
 }
 
 #[test]
@@ -213,16 +220,25 @@ fn args_env_and_exit_code_are_forwarded() {
         .args(["--json", "ls", "--kind", "password"])
         .output()
         .expect("run");
-    assert_eq!(out.status.code(), Some(7), "exit code of wcm.exe must be propagated");
+    assert_eq!(
+        out.status.code(),
+        Some(7),
+        "exit code of wcm.exe must be propagated"
+    );
     let rec = read(tmp.path(), "exe.args");
     // no wslpath on PATH → the Linux spelling is kept, but --vault is injected from WCM_VAULT
     assert!(
-        rec.contains(&format!("ARGS:--vault {} --json ls --kind password\n", vault.display())),
+        rec.contains(&format!(
+            "ARGS:--vault {} --json ls --kind password\n",
+            vault.display()
+        )),
         "{rec}"
     );
     assert!(rec.contains("LAUNCHED:1\n"), "{rec}");
     assert!(
-        rec.contains("WSLENV:FOO/p:WCM_LAUNCHED_FROM_WSL/w:WCM_PASSPHRASE/w:WCM_EXPORT_PASSPHRASE/w\n"),
+        rec.contains(
+            "WSLENV:FOO/p:WCM_LAUNCHED_FROM_WSL/w:WCM_PASSPHRASE/w:WCM_EXPORT_PASSPHRASE/w\n"
+        ),
         "{rec}"
     );
     assert!(rec.contains("PASS:pw\n"), "{rec}");
@@ -236,7 +252,16 @@ fn explicit_vault_is_not_duplicated_and_paths_after_double_dash_are_untouched() 
         .env("WCM_WINDOWS_EXE", &exe)
         .env("FAKE_OUT", tmp.path())
         .env("WCM_VAULT", "/ignored/vault.wcm")
-        .args(["run", "--vault=/v.wcm", "--env", "A=x", "--", "cat", "--vault", "/etc/passwd"])
+        .args([
+            "run",
+            "--vault=/v.wcm",
+            "--env",
+            "A=x",
+            "--",
+            "cat",
+            "--vault",
+            "/etc/passwd",
+        ])
         .assert()
         .success();
     let rec = read(tmp.path(), "exe.args");
@@ -259,11 +284,11 @@ fn ssh_add_pipes_private_key_into_linux_ssh_add() {
         .arg(&ssh_add)
         .assert()
         .success()
-        .stderr(predicate::str::contains("ssh key 'mykey' added to the WSL ssh-agent"));
-    assert!(
-        read(tmp.path(), "exe.args")
-            .starts_with("ARGS:--vault /v/vault.wcm get mykey --field private_key --raw\n"),
-    );
+        .stderr(predicate::str::contains(
+            "ssh key 'mykey' added to the WSL ssh-agent",
+        ));
+    assert!(read(tmp.path(), "exe.args")
+        .starts_with("ARGS:--vault /v/vault.wcm get mykey --field private_key --raw\n"),);
     assert_eq!(read(tmp.path(), "ssh-add.args"), "ARGS:-t 1h -\n");
     assert_eq!(read(tmp.path(), "ssh-add.stdin"), "FAKE-PRIVATE-KEY\n");
 }
@@ -281,14 +306,21 @@ fn ssh_remove_pipes_public_key_into_ssh_add_d() {
         .args(["--json", "ssh", "remove", "mykey"])
         .output()
         .expect("run");
-    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
     let j = json(&out);
     assert_eq!(j["action"], "remove");
     assert_eq!(j["name"], "mykey");
     assert_eq!(j["agent"], "wsl");
     assert!(read(tmp.path(), "exe.args").starts_with("ARGS:ssh pubkey mykey\n"));
     assert_eq!(read(tmp.path(), "ssh-add.args"), "ARGS:-d -\n");
-    assert_eq!(read(tmp.path(), "ssh-add.stdin"), "ssh-ed25519 AAAAC3 comment\n");
+    assert_eq!(
+        read(tmp.path(), "ssh-add.stdin"),
+        "ssh-ed25519 AAAAC3 comment\n"
+    );
 }
 
 #[test]
@@ -371,7 +403,11 @@ fn doctor_reports_wsl_detection_and_exe() {
         .args(["--json", "doctor"])
         .output()
         .expect("run");
-    assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
     let d = json(&out);
     assert_eq!(d["wsl"]["detected"], true);
     assert_eq!(d["wsl"]["kind"], "WSL2");
@@ -383,5 +419,7 @@ fn doctor_reports_wsl_detection_and_exe() {
         .arg("doctor")
         .assert()
         .success()
-        .stdout(predicate::str::contains("wsl:           WSL2 (wcm.exe: not found)"));
+        .stdout(predicate::str::contains(
+            "wsl:           WSL2 (wcm.exe: not found)",
+        ));
 }

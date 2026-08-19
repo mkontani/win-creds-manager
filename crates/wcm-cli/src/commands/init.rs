@@ -38,23 +38,6 @@ struct InitReport {
     recovery_key: String,
 }
 
-/// Summarizes a slot for status/init output.
-pub fn summarize(slot: &KeySlot) -> impl Serialize {
-    let (hw_backed, dpapi) = match &slot.params {
-        SlotParams::Hello {
-            hw_backed, dpapi, ..
-        } => (Some(*hw_backed), Some(*dpapi)),
-        SlotParams::Passphrase { .. } => (None, None),
-    };
-    SlotSummary {
-        id: slot.id,
-        label: slot.label.clone(),
-        kind: slot.kind().as_str(),
-        hw_backed,
-        dpapi,
-    }
-}
-
 pub fn run(ctx: &Ctx, args: &InitArgs) -> Result<()> {
     if ctx.vault.exists() {
         return Err(Error::AlreadyExists(format!(

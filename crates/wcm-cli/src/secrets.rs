@@ -47,6 +47,7 @@ impl SecretInput {
     }
 
     /// Generated / typed / piped text (lossy for binary).
+    #[cfg(test)]
     pub fn text_lossy(&self) -> String {
         String::from_utf8_lossy(&self.bytes).into_owned()
     }

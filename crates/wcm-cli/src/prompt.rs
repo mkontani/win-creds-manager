@@ -135,7 +135,7 @@ mod tests {
             quiet: true,
         };
         assert!(matches!(p.read_hidden("x"), Err(Error::AuthUnavailable(_))));
-        assert_eq!(p.confirm("sure?").expect("confirm"), false);
+        assert!(!p.confirm("sure?").expect("confirm"));
         assert!(matches!(p.read_line("q"), Err(Error::AuthUnavailable(_))));
     }
 }

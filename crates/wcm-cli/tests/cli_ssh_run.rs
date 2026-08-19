@@ -5,6 +5,7 @@
 
 mod common;
 
+#[cfg(unix)]
 use std::path::{Path, PathBuf};
 
 use assert_cmd::Command;
