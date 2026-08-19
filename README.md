@@ -124,7 +124,7 @@ commands such as `wcm get a b c`.
 | `wcm ssh remove <name>` | Remove the key from `ssh-agent` | 1 |
 | `wcm run --env VAR=name[/field]… [--env-file F] -- cmd args…` | Run a command with secrets in its environment | 1 |
 | `wcm export [-o FILE] [--plaintext --i-know]` | Encrypted (passphrase-only `.wcm`) or plaintext JSON export | 1 (+ export passphrase) |
-| `wcm import <file> [--overwrite\|--replace]` | Import items from an export (`.wcm` or `.json`) | 1 (+ export passphrase for `.wcm`) |
+| `wcm import <file> [--overwrite\|--replace -f]` | Import items from an export (`.wcm` or `.json`); `--replace` wipes the vault first and needs `-f`/a confirmation | 1 (+ export passphrase for `.wcm`) |
 | `wcm recover [--no-hello] [--no-dpapi]` | Re-create the Hello slot using the recovery key / passphrase | recovery key + 2 |
 | `wcm rekey` | Rotate the DEK and re-seal every slot | 1 + recovery key |
 | `wcm slot ls` | List key slots (no unlock) | 0 |

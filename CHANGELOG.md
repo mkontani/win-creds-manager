@@ -21,6 +21,12 @@ in [docs/FORMAT.md](docs/FORMAT.md); format changes are called out explicitly.
   remaining slot still references the same credential. A failed re-seal or save
   used to leave the vault unopenable.
 
+### Changed
+
+- `wcm import --replace` (which deletes every stored item) now requires
+  `-f/--force` or an interactive confirmation; with `--no-input` and without
+  `-f` it fails with exit 2 instead of wiping the vault.
+
 ### Security
 
 - `import` validates every incoming item: item names and field keys go through

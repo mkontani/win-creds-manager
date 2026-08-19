@@ -377,9 +377,12 @@ pub struct ImportArgs {
     /// Overwrite existing items with the same name.
     #[arg(long, conflicts_with = "replace")]
     pub overwrite: bool,
-    /// Remove all existing items first.
+    /// Remove all existing items first (destructive; requires -f or a confirmation).
     #[arg(long)]
     pub replace: bool,
+    /// Do not ask for confirmation (required by --replace with --no-input).
+    #[arg(short, long)]
+    pub force: bool,
 }
 
 /// `wcm recover`

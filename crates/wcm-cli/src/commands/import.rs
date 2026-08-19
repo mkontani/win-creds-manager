@@ -6,7 +6,7 @@ use serde::Serialize;
 use wcm_core::export::{merge, MergeMode, PlainExport};
 use wcm_core::item::Item;
 use wcm_core::slot::passphrase::PassphraseBackend;
-use wcm_core::slot::{Envelope, IdentityEnvelope, KeySlot, KeySlotBackend, SlotKind};
+use wcm_core::slot::{Envelope, IdentityEnvelope, KeySlot, KeySlotBackend, Prompter, SlotKind};
 use wcm_core::vault::header::MAGIC;
 use wcm_core::vault::{SlotResolver, Vault};
 use wcm_core::{Error, Result};
@@ -81,9 +81,28 @@ fn read_encrypted(ctx: &Ctx, args: &ImportArgs) -> Result<Vec<Item>> {
     Ok(opened.body.items)
 }
 
+/// `--replace` throws away every stored item: refuse unless `-f` or the user
+/// confirms (which `--no-input` answers with "no").
+fn confirm_replace(ctx: &Ctx, args: &ImportArgs) -> Result<()> {
+    if !args.replace || args.force {
+        return Ok(());
+    }
+    let ok = ctx.prompter.confirm(&format!(
+        "--replace deletes every item in {} before importing. Continue?",
+        ctx.vault.path.display()
+    ))?;
+    if !ok {
+        return Err(Error::Invalid(
+            "--replace not confirmed; pass -f/--force to delete every stored item".into(),
+        ));
+    }
+    Ok(())
+}
+
 pub fn run(ctx: &Ctx, args: &ImportArgs) -> Result<()> {
     // Fail fast on the destination before touching the import file.
     ctx.vault.read_header()?;
+    confirm_replace(ctx, args)?;
     let bytes = std::fs::read(&args.file)
         .map_err(|e| Error::Io(format!("{}: {e}", args.file.display())))?;
     let incoming = if is_vault_file(&bytes) {

@@ -265,8 +265,28 @@ fn import_merge_overwrite_and_replace_modes() {
     assert_eq!(names(&e), vec!["a", "b", "c", "d"]);
     assert_eq!(secret_of(&e, "a"), "a3");
 
-    // --replace drops everything first.
-    let r = import_items(&v, "four.json", vec![password("z", "z4")], &["--replace"]);
+    // --replace drops everything first — and needs -f (or a confirmation).
+    let p = write_file(
+        v.dir.path(),
+        "four.json",
+        plain_json(vec![password("z", "z4")]).as_bytes(),
+    );
+    let out = v
+        .cmd()
+        .args(["--json", "import", "--replace"])
+        .arg(&p)
+        .output()
+        .expect("run import");
+    assert_eq!(out.status.code(), Some(2));
+    assert_eq!(json_err(&out)["error"]["code"], "INVALID_INPUT");
+    assert_eq!(names(&dump(&v, &[])), vec!["a", "b", "c", "d"]);
+
+    let r = import_items(
+        &v,
+        "four.json",
+        vec![password("z", "z4")],
+        &["--replace", "-f"],
+    );
     assert_eq!(r["added"], 1);
     assert_eq!(r["overwritten"], 0);
     assert_eq!(r["skipped"], 0);
