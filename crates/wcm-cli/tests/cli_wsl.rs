@@ -51,7 +51,7 @@ printf 'WSLENV:%s\n' "$WSLENV" >> "$FAKE_OUT/exe.args"
 printf 'PASS:%s\n' "$WCM_PASSPHRASE" >> "$FAKE_OUT/exe.args"
 if [ -n "$FAKE_EXE_RC" ]; then echo "fake failure" >&2; exit "$FAKE_EXE_RC"; fi
 case " $* " in
-  *" get "*) printf 'FAKE-PRIVATE-KEY\n' ;;
+  *" get "*) printf 'FAKE-PRIVATE-KEY' ;;
   *" pubkey "*) printf 'ssh-ed25519 AAAAC3 comment\n' ;;
   *) printf 'ARGS:%s\n' "$*" ;;
 esac
@@ -290,6 +290,7 @@ fn ssh_add_pipes_private_key_into_linux_ssh_add() {
     assert!(read(tmp.path(), "exe.args")
         .starts_with("ARGS:--vault /v/vault.wcm get mykey --field private_key --raw\n"),);
     assert_eq!(read(tmp.path(), "ssh-add.args"), "ARGS:-t 1h -\n");
+    // `get --raw` writes no trailing newline; the shim must add exactly one.
     assert_eq!(read(tmp.path(), "ssh-add.stdin"), "FAKE-PRIVATE-KEY\n");
 }
 

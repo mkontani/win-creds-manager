@@ -11,6 +11,10 @@ in [docs/FORMAT.md](docs/FORMAT.md); format changes are called out explicitly.
 
 ### Fixed
 
+- WSL: `wcm ssh add` piped the key material from `wcm.exe get --raw` into
+  `ssh-add` verbatim, so a key stored without a trailing newline was rejected as
+  malformed. The shim now terminates the input with exactly one newline, like
+  the native path.
 - `recover` and `slot rm` no longer destroy the Windows Hello credential of a
   removed slot before the vault that replaces it has been saved: the external
   state is now destroyed only after a successful write, and never when a

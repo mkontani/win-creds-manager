@@ -318,6 +318,9 @@ fn find_ssh_add(explicit: Option<&str>, env: &Env) -> Option<PathBuf> {
 }
 
 fn pipe_into_ssh_add(ssh_add: &Path, args: &[String], key: &[u8]) -> Result<(), String> {
+    // `wcm.exe get --raw` writes the key without a trailing newline; ssh-add
+    // needs one or it reports "error in libcrypto" on an otherwise valid PEM.
+    let key = crate::ssh::with_trailing_newline(key);
     let mut cmd = Command::new(ssh_add);
     crate::prompt::scrub_secret_env(&mut cmd);
     let mut child = cmd
@@ -329,7 +332,7 @@ fn pipe_into_ssh_add(ssh_add: &Path, args: &[String], key: &[u8]) -> Result<(), 
         .map_err(|e| format!("cannot run {}: {e}", ssh_add.display()))?;
     if let Some(mut stdin) = child.stdin.take() {
         // A short write/EPIPE means ssh-add bailed out; its exit status tells the story.
-        let _ = stdin.write_all(key).and_then(|_| stdin.flush());
+        let _ = stdin.write_all(&key).and_then(|_| stdin.flush());
     }
     let status = child
         .wait()

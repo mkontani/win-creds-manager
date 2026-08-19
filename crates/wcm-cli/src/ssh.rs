@@ -57,7 +57,11 @@ pub fn ssh_add_remove(ssh_add: &Path, pubkey_line: &str) -> Result<()> {
 }
 
 /// `bytes` plus exactly one trailing newline.
-fn with_trailing_newline(bytes: &[u8]) -> Zeroizing<Vec<u8>> {
+///
+/// OpenSSH needs the PEM (and the `authorized_keys` line) newline-terminated;
+/// `--stdin` strips one newline on input and `get --raw` writes none, so it has
+/// to be put back here. Also used by the WSL shim ([`crate::wsl`]).
+pub fn with_trailing_newline(bytes: &[u8]) -> Zeroizing<Vec<u8>> {
     let mut v = Zeroizing::new(Vec::with_capacity(bytes.len() + 1));
     v.extend_from_slice(bytes);
     if !v.ends_with(b"\n") {
