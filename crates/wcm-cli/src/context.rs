@@ -2,18 +2,20 @@
 
 use std::path::PathBuf;
 
+use secrecy::ExposeSecret;
 use wcm_core::crypto::kdf::Argon2Params;
+use wcm_core::recovery_key::RecoveryKey;
 use wcm_core::slot::passphrase::PassphraseBackend;
 use wcm_core::slot::{
     Envelope, IdentityEnvelope, KeySlot, KeySlotBackend, SlotKind, UnlockContext,
 };
-use wcm_core::vault::{SlotResolver, UnlockedVault, Vault};
+use wcm_core::vault::{Header, SlotResolver, UnlockedVault, Vault};
 use wcm_core::{Error, Result};
 use wcm_hello::{DpapiEnvelope, HelloOptions};
 
 use crate::cli::Cli;
 use crate::output::Output;
-use crate::prompt::CliPrompter;
+use crate::prompt::{passphrase_from_env, CliPrompter};
 
 /// Environment variable overriding the default data directory (tests).
 pub const DATA_DIR_ENV: &str = "WCM_DATA_DIR";
@@ -74,9 +76,13 @@ impl Ctx {
     }
 
     /// A passphrase backend that prompts (or uses `WCM_PASSPHRASE`).
+    ///
+    /// `WCM_PASSPHRASE` is resolved up front so it also works under `--no-input`
+    /// (a malformed value is reported by the prompter on first use).
     pub fn passphrase_backend(&self, label: &str, params: Argon2Params) -> PassphraseBackend {
         let mut b = PassphraseBackend::prompting(label);
         b.params = params;
+        b.secret = passphrase_from_env().ok().flatten();
         b
     }
 
@@ -95,8 +101,28 @@ impl Ctx {
         let header = self.vault.read_header()?;
         let ctx = self.unlock_ctx(header.vault_id_arr(), reason);
         let resolver = self.resolver();
-        self.vault
-            .unlock(&resolver, &ctx, self.preferred_slot.as_deref())
+        let preferred = self.preferred_slot_for(&header);
+        self.vault.unlock(&resolver, &ctx, preferred.as_deref())
+    }
+
+    /// Slot to try first: `--slot` if given; otherwise, when `WCM_PASSPHRASE` is
+    /// set, the slot it is meant for (a recovery key → the `recovery` slot, any
+    /// other passphrase → the first non-recovery passphrase slot) so the env
+    /// secret is never tried against the wrong slot.
+    pub fn preferred_slot_for(&self, header: &Header) -> Option<String> {
+        if let Some(s) = &self.preferred_slot {
+            return Some(s.clone());
+        }
+        let secret = passphrase_from_env().ok().flatten()?;
+        let is_recovery_key = RecoveryKey::looks_like(secret.expose_secret());
+        header
+            .slots
+            .iter()
+            .find(|s| {
+                s.kind() == SlotKind::Passphrase
+                    && (s.label == crate::commands::init::LABEL_RECOVERY) == is_recovery_key
+            })
+            .map(|s| s.label.clone())
     }
 
     /// Saves the vault; maps concurrent modification to a friendly error.
