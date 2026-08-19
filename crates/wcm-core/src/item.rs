@@ -117,6 +117,24 @@ impl FieldValue {
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
+
+    /// Overwrites the value in place. Called from [`Drop`].
+    fn zeroize_value(&mut self) {
+        use zeroize::Zeroize;
+        match self {
+            FieldValue::Text(s) => s.zeroize(),
+            FieldValue::Bytes(b) => b.zeroize(),
+        }
+    }
+}
+
+/// The decrypted body lives in memory for the duration of one command; every
+/// field value is wiped when it goes out of scope so it is not left behind in
+/// freed heap memory (`Zeroizing` cannot be used: the value is serialized).
+impl Drop for FieldValue {
+    fn drop(&mut self) {
+        self.zeroize_value();
+    }
 }
 
 impl Serialize for FieldValue {
@@ -463,6 +481,25 @@ mod tests {
         assert!(serde_json::from_str::<FieldValue>("{\"b64\":\"!!\"}").is_err());
         assert!(serde_json::from_str::<FieldValue>("{\"x\":1}").is_err());
         assert!(serde_json::from_str::<FieldValue>("12").is_err());
+    }
+
+    #[test]
+    fn field_values_are_wiped_on_drop() {
+        let mut t = FieldValue::Text("super-secret".into());
+        t.zeroize_value();
+        assert!(t.is_empty(), "text must be wiped");
+        assert_eq!(t, FieldValue::Text(String::new()));
+
+        let mut b = FieldValue::Bytes(vec![1, 2, 3, 4]);
+        b.zeroize_value();
+        assert!(b.is_empty(), "bytes must be wiped");
+        assert_eq!(b, FieldValue::Bytes(Vec::new()));
+
+        // A clone is independent: wiping one leaves the other intact.
+        let original = FieldValue::Text("keep".into());
+        let mut copy = original.clone();
+        copy.zeroize_value();
+        assert_eq!(original.as_text(), Some("keep"));
     }
 
     #[test]

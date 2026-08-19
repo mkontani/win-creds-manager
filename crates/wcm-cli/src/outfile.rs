@@ -31,21 +31,31 @@ pub fn write_truncate(path: &Path, data: &[u8]) -> Result<()> {
     finish(path, opts, data)
 }
 
-fn finish(path: &Path, mut opts: OpenOptions, data: &[u8]) -> Result<()> {
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::OpenOptionsExt;
-        opts.mode(SECRET_FILE_MODE);
-    }
-    let mut f = opts.open(path).map_err(|e| match e.kind() {
+fn finish(path: &Path, opts: OpenOptions, data: &[u8]) -> Result<()> {
+    let mut f = open(path, opts).map_err(|e| match e.kind() {
         std::io::ErrorKind::AlreadyExists => Error::AlreadyExists(path.display().to_string()),
         _ => Error::Io(format!("{}: {e}", path.display())),
     })?;
-    // `mode` only applies to a file this call created; tighten a pre-existing one.
+    // The mode above only applies to a file this call created; a pre-existing
+    // one keeps whatever it had, so tighten it explicitly.
     restrict(&f, path)?;
     f.write_all(data)
         .and_then(|_| f.sync_all())
         .map_err(|e| Error::Io(format!("{}: {e}", path.display())))
+}
+
+#[cfg(unix)]
+fn open(path: &Path, mut opts: OpenOptions) -> std::io::Result<File> {
+    use std::os::unix::fs::OpenOptionsExt;
+    opts.mode(SECRET_FILE_MODE);
+    opts.open(path)
+}
+
+#[cfg(not(unix))]
+fn open(path: &Path, opts: OpenOptions) -> std::io::Result<File> {
+    // Windows inherits the ACL of the parent directory (per-user AppData or the
+    // user's own working directory); there is no umask to correct.
+    opts.open(path)
 }
 
 #[cfg(unix)]
@@ -57,8 +67,6 @@ fn restrict(f: &File, path: &Path) -> Result<()> {
 
 #[cfg(not(unix))]
 fn restrict(_f: &File, _path: &Path) -> Result<()> {
-    // Windows inherits the ACL of the parent directory (per-user AppData /
-    // the user's own working directory); there is no umask to correct.
     Ok(())
 }
 

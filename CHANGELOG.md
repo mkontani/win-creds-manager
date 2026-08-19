@@ -32,6 +32,8 @@ in [docs/FORMAT.md](docs/FORMAT.md); format changes are called out explicitly.
 
 ### Security
 
+- Decrypted field values are zeroized when they are dropped (`Drop` for
+  `FieldValue`), so the plaintext body does not linger in freed heap memory.
 - `import` validates every incoming item: item names and field keys go through
   the same rules as `wcm add`, and control characters in notes and tags are
   rejected (terminal-escape / output forgery). A malformed document is
