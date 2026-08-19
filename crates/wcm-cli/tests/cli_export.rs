@@ -715,16 +715,29 @@ fn slot_ls_add_rm_lifecycle() {
     assert_eq!(r["label"], "second");
     assert_eq!(r["kind"], "passphrase");
     assert_eq!(slot_labels(&v), vec!["recovery", "passphrase", "second"]);
-    // The new slot opens the vault.
-    let e = dump(&v, &[("WCM_PASSPHRASE", "second-pass")]);
-    assert!(e.items.is_empty());
+    // The new slot opens the vault (with several passphrase slots, `--slot`
+    // selects which one the passphrase is meant for; without it the first
+    // non-recovery passphrase slot is tried and a mismatch is an integrity error).
     let out = v
         .cmd()
         .env("WCM_PASSPHRASE", "second-pass")
         .args(["--slot", "second", "export", "--plaintext", "--i-know"])
         .output()
         .expect("run");
-    assert!(out.status.success());
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let e = PlainExport::from_json(&String::from_utf8_lossy(&out.stdout)).expect("parse");
+    assert!(e.items.is_empty());
+    let out = v
+        .cmd()
+        .env("WCM_PASSPHRASE", "second-pass")
+        .args(["export", "--plaintext", "--i-know"])
+        .output()
+        .expect("run");
+    assert_eq!(out.status.code(), Some(8));
 
     // Duplicate label → 4; default label "passphrase" also exists → 4.
     let out = v
@@ -808,24 +821,10 @@ fn slot_ls_add_rm_lifecycle() {
         .assert()
         .success();
     assert_eq!(slot_labels(&v), vec!["recovery"]);
-    // ...but the last slot is refused.
+    // ...but the last slot is refused (before any unlock prompt).
     let out = v
         .cmd()
         .env("WCM_PASSPHRASE", PASS)
-        .args(["--json", "slot", "rm", "-f", "recovery"])
-        .output()
-        .expect("run");
-    // PASS no longer opens the vault (passphrase slot is gone) → 8 before the check;
-    // use the recovery key to prove possession and hit the last-slot refusal.
-    assert_eq!(out.status.code(), Some(8));
-    let (v2, key2) = TestVault::initialized();
-    v2.cmd()
-        .args(["slot", "rm", "-f", "passphrase"])
-        .assert()
-        .success();
-    let out = v2
-        .cmd()
-        .env("WCM_PASSPHRASE", &key2)
         .args(["--json", "slot", "rm", "-f", "recovery"])
         .output()
         .expect("run");
@@ -834,7 +833,17 @@ fn slot_ls_add_rm_lifecycle() {
         .as_str()
         .expect("msg")
         .contains("last"));
-    assert_eq!(slot_labels(&v2), vec!["recovery"]);
+    assert_eq!(slot_labels(&v), vec!["recovery"]);
+    // Unlock failure (no matching passphrase) surfaces when the removal is otherwise valid.
+    let (v2, _) = TestVault::initialized();
+    let out = v2
+        .cmd()
+        .env("WCM_PASSPHRASE", "not-the-passphrase")
+        .args(["--json", "slot", "rm", "-f", "passphrase"])
+        .output()
+        .expect("run");
+    assert_eq!(out.status.code(), Some(8));
+    assert_eq!(slot_labels(&v2), vec!["recovery", "passphrase"]);
 
     // Uninitialized vault.
     TestVault::new().cmd().args(["slot", "ls"]).assert().code(5);
