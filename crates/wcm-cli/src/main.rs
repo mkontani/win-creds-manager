@@ -11,6 +11,7 @@ mod ssh;
 mod sshkey;
 #[cfg(target_os = "linux")]
 mod wsl;
+mod wsl_core;
 
 use std::process::ExitCode;
 
