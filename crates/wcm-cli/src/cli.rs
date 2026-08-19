@@ -214,7 +214,7 @@ pub struct GetArgs {
     #[arg(short = 'n', long)]
     pub no_newline: bool,
     /// Copy to the clipboard instead of printing.
-    #[arg(long)]
+    #[arg(long, conflicts_with = "out_file")]
     pub clip: bool,
     /// Seconds before the clipboard is cleared (with --clip).
     #[arg(long, default_value = "45", env = "WCM_CLIP_TIME")]

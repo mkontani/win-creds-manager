@@ -21,17 +21,20 @@ pub struct Entry {
 }
 
 pub fn run(ctx: &Ctx, args: &GetArgs) -> Result<()> {
-    let single_only = args.clip || args.out_file.is_some();
+    // Without a separator between values, several names produce one
+    // indistinguishable blob — refuse instead of guessing.
+    let to_target = args.clip || args.out_file.is_some();
+    let single_only = to_target || args.raw || args.no_newline;
     if single_only && args.names.len() != 1 {
         return Err(Error::Invalid(
-            "--clip and --out-file accept exactly one item name".into(),
+            "--raw, -n/--no-newline, --clip and --out-file accept exactly one item name".into(),
         ));
     }
     let v = ctx.unlock("get item")?;
     let entries = resolve_all(&v.body, &args.names, args.field.as_deref())?;
 
     // --clip / --out-file never print the value (not even as JSON).
-    if let Some(first) = entries.first().filter(|_| single_only) {
+    if let Some(first) = entries.first().filter(|_| to_target) {
         if args.clip {
             let text = first.value.as_text().ok_or_else(|| {
                 Error::Invalid("value is binary; it cannot be copied to the clipboard".into())

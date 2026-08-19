@@ -23,6 +23,9 @@ in [docs/FORMAT.md](docs/FORMAT.md); format changes are called out explicitly.
 
 ### Changed
 
+- `wcm get` accepts exactly one item name together with `--raw`, `-n`,
+  `--clip` or `--out-file`; several values used to be concatenated without a
+  separator. `--clip` and `--out-file` are now mutually exclusive.
 - `wcm import --replace` (which deletes every stored item) now requires
   `-f/--force` or an interactive confirmation; with `--no-input` and without
   `-f` it fails with exit 2 instead of wiping the vault.

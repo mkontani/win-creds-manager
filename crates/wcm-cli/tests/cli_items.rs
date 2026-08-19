@@ -207,8 +207,8 @@ fn get_public_field_and_multiple_names() {
     add_stdin(&v, "b", "vb", &[]);
     assert_eq!(get(&v, &["a", "--field", "username"]).stdout, b"alice\n");
     assert_eq!(get(&v, &["a", "b"]).stdout, b"va\nvb\n");
-    assert_eq!(get(&v, &["a", "b", "--raw"]).stdout, b"vavb");
-    assert_eq!(get(&v, &["b", "a", "-n"]).stdout, b"vbva");
+    assert_eq!(get(&v, &["a", "--raw"]).stdout, b"va");
+    assert_eq!(get(&v, &["b", "-n"]).stdout, b"vb");
 
     let out = v
         .cmd()
@@ -230,7 +230,7 @@ fn get_public_field_and_multiple_names() {
 }
 
 #[test]
-fn get_clip_and_out_file_require_exactly_one_name() {
+fn get_single_value_flags_require_exactly_one_name() {
     let (v, _) = TestVault::initialized();
     add_stdin(&v, "a", "va", &[]);
     add_stdin(&v, "b", "vb", &[]);
@@ -246,6 +246,22 @@ fn get_clip_and_out_file_require_exactly_one_name() {
         .assert()
         .code(2);
     assert!(!f.exists());
+    // Concatenating several values without a separator is refused as well.
+    for flag in ["--raw", "-n"] {
+        let out = v
+            .cmd()
+            .args(["--json", "get", "a", "b", flag])
+            .output()
+            .expect("run get");
+        assert_eq!(out.status.code(), Some(2), "{flag}");
+        assert!(out.stdout.is_empty(), "{flag} leaked a value");
+    }
+    // --clip and --out-file are mutually exclusive (clap usage error).
+    v.cmd()
+        .args(["get", "a", "--clip", "--out-file"])
+        .arg(&f)
+        .assert()
+        .code(2);
 }
 
 #[cfg(unix)]

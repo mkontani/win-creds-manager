@@ -113,7 +113,7 @@ commands such as `wcm get a b c`.
 | `wcm init [--passphrase] [--no-hello] [--no-dpapi]` | Create a vault: Hello slot + mandatory recovery key (+ optional passphrase slot) | 2 |
 | `wcm add <name> [--kind K] [--stdin\|--file P\|--generate [LEN] [--words N] [--no-symbols]] [--field k=v]… [--notes S] [--tag T]… [-f] [--clip]` | Add an item (kind auto-detected from `--file` / OpenSSH key) | 1 |
 | `wcm set <name> <field> [--stdin\|--file P\|--generate\|--delete] [--public]` | Set, replace or delete one field | 1 |
-| `wcm get <name>… [--field F] [--raw] [-n] [--clip [--clip-timeout S]] [--out-file P]` | Print a secret field of one or more items | 1 |
+| `wcm get <name>… [--field F] [--raw] [-n] [--clip [--clip-timeout S]] [--out-file P]` | Print a secret field of one or more items (`--raw`, `-n`, `--clip` and `--out-file` take exactly one name) | 1 |
 | `wcm show <name> [--reveal]` | Show metadata and fields (secrets masked unless `--reveal`) | 1 |
 | `wcm ls [PREFIX] [--kind K] [--tag T] [-l]` (alias `list`) | List items | 1 |
 | `wcm rm <name>… [-f]` (alias `remove`) | Remove items | 1 |
