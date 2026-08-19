@@ -987,3 +987,44 @@ fn plaintext_export_file_is_owner_only() {
         "plaintext export must be owner-only, got {mode:o}"
     );
 }
+
+#[test]
+fn hostile_import_document_is_a_format_error() {
+    let (v, _) = TestVault::initialized();
+    import_items(&v, "good.json", vec![password("keep", "k1")], &[]);
+
+    let hostile = vec![
+        password("ok", "v1"),
+        // Terminal escape in the item name: `ls` would print a forged line.
+        password("evil\u{1b}[2K\rwcm: everything fine", "v2"),
+    ];
+    let p = write_file(v.dir.path(), "evil.json", plain_json(hostile).as_bytes());
+    let out = v
+        .cmd()
+        .args(["--json", "import"])
+        .arg(&p)
+        .output()
+        .expect("run import");
+    assert_eq!(out.status.code(), Some(12));
+    let e = json_err(&out);
+    assert_eq!(e["error"]["code"], "FORMAT");
+    assert!(
+        !e["error"]["message"]
+            .as_str()
+            .expect("message")
+            .contains('\u{1b}'),
+        "the error message must not replay the escape sequence"
+    );
+
+    // An over-long name is a format error too (not a usage error).
+    let p = write_file(
+        v.dir.path(),
+        "long.json",
+        plain_json(vec![password(&"x".repeat(201), "v")]).as_bytes(),
+    );
+    v.cmd().args(["import"]).arg(&p).assert().code(12);
+
+    // Nothing was imported.
+    let e = dump(&v, &[]);
+    assert_eq!(names(&e), vec!["keep"]);
+}

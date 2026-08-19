@@ -3,7 +3,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::item::Item;
+use crate::item::{validate_field_name, validate_name, Item};
 use crate::vault::VaultBody;
 use crate::{Error, Result};
 
@@ -72,12 +72,66 @@ pub struct MergeReport {
     pub skipped: usize,
 }
 
+/// Control characters allowed inside free-form notes.
+const NOTE_WHITESPACE: [char; 3] = ['\n', '\r', '\t'];
+
+/// Renders untrusted text for an error message (escapes control characters).
+fn quoted(s: &str) -> String {
+    s.escape_debug().to_string()
+}
+
+/// Validates one item coming from an export file.
+///
+/// Import data is attacker-controlled: an item name, field key, tag or note may
+/// otherwise carry terminal escape sequences (output forgery in `ls` / `show`)
+/// or break invariants `wcm add` enforces. Every failure maps to
+/// [`Error::Format`] — the *document* is malformed, not the user's command line.
+pub fn validate_incoming(item: &Item) -> Result<()> {
+    validate_name(&item.name)
+        .map_err(|e| Error::Format(format!("invalid item name \"{}\": {e}", quoted(&item.name))))?;
+    for key in item.fields.keys() {
+        validate_field_name(key).map_err(|e| {
+            Error::Format(format!(
+                "item \"{}\": invalid field name \"{}\": {e}",
+                quoted(&item.name),
+                quoted(key)
+            ))
+        })?;
+    }
+    if item
+        .notes
+        .chars()
+        .any(|c| c.is_control() && !NOTE_WHITESPACE.contains(&c))
+    {
+        return Err(Error::Format(format!(
+            "item \"{}\": notes contain control characters",
+            quoted(&item.name)
+        )));
+    }
+    for tag in &item.tags {
+        if tag.is_empty() || tag.chars().any(char::is_control) {
+            return Err(Error::Format(format!(
+                "item \"{}\": invalid tag \"{}\"",
+                quoted(&item.name),
+                quoted(tag)
+            )));
+        }
+    }
+    Ok(())
+}
+
 /// Merges `incoming` into `body` per `mode`, returning the new body and a report.
+///
+/// Every incoming item is validated first, so a malformed document changes
+/// nothing.
 pub fn merge(
     body: &VaultBody,
     incoming: &[Item],
     mode: MergeMode,
 ) -> Result<(VaultBody, MergeReport)> {
+    for item in incoming {
+        validate_incoming(item)?;
+    }
     let mut out = match mode {
         MergeMode::Replace => VaultBody {
             items: Vec::new(),
@@ -133,6 +187,48 @@ mod tests {
             PlainExport::from_json("{\"version\":9,\"exported\":\"x\",\"items\":[]}"),
             Err(Error::Format(_))
         ));
+    }
+
+    #[test]
+    fn hostile_items_are_format_errors() {
+        let body = VaultBody::default();
+        let cases = vec![
+            item("", "v"),
+            item(&"x".repeat(201), "v"),
+            item("a\u{1b}[2Kforged", "v"),
+            item("/leading", "v"),
+            item("a", "v").with_field("bad key", Field::secret_text("v")),
+            item("a", "v").with_notes("line\u{1b}[31m"),
+            Item::new("a", ItemKind::Password, "t").with_tags(vec!["ok\u{7}".into()]),
+            Item::new("a", ItemKind::Password, "t").with_tags(vec![String::new()]),
+        ];
+        for it in cases {
+            let name = it.name.clone();
+            let e = merge(&body, std::slice::from_ref(&it), MergeMode::Merge)
+                .expect_err("must be rejected");
+            assert!(matches!(e, Error::Format(_)), "{name:?} -> {e:?}");
+            // The message never carries the raw escape sequence.
+            assert!(!e.to_string().contains('\u{1b}'), "{e}");
+        }
+        // Nothing is imported when a later item is malformed.
+        let (b, _) = merge(&body, &[item("good", "v")], MergeMode::Merge).expect("ok");
+        assert!(merge(
+            &b,
+            &[item("also-good", "v"), item("", "v")],
+            MergeMode::Merge
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn legitimate_items_survive_validation() {
+        let ok = item("github/token", "v")
+            .with_notes("first line\nsecond\tline\r\n")
+            .with_tags(vec!["work".into(), "日本語".into()]);
+        validate_incoming(&ok).expect("valid");
+        let (b, r) = merge(&VaultBody::default(), &[ok], MergeMode::Merge).expect("merge");
+        assert_eq!(r.added, 1);
+        assert!(b.get("github/token").is_some());
     }
 
     #[test]

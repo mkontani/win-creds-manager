@@ -23,6 +23,11 @@ in [docs/FORMAT.md](docs/FORMAT.md); format changes are called out explicitly.
 
 ### Security
 
+- `import` validates every incoming item: item names and field keys go through
+  the same rules as `wcm add`, and control characters in notes and tags are
+  rejected (terminal-escape / output forgery). A malformed document is
+  `FORMAT` (exit 12) instead of `INVALID_INPUT`, imports nothing, and error
+  messages escape the offending text.
 - `wcm run`, the `ssh-add` helper and the detached `wcm unclip` no longer pass
   `WCM_PASSPHRASE`, `WCM_EXPORT_PASSPHRASE` or `WCM_NEW_PASSPHRASE` on to the
   child process.
