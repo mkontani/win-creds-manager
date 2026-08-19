@@ -97,7 +97,27 @@ impl Ctx {
     pub fn unlock(&self, reason: &str) -> Result<UnlockedVault> {
         let header = self.vault.read_header()?;
         let ctx = self.unlock_ctx(header.vault_id_arr(), reason);
-        let resolver = self.resolver();
+        let mut resolver = self.resolver();
+        // `WCM_PASSPHRASE` must work even with --no-input (allow_ui=false skips the prompter).
+        resolver.passphrase.secret = passphrase_from_env()?;
+        if self.preferred_slot.is_none() && resolver.passphrase.secret.is_some() {
+            // An env-supplied passphrase may belong to any passphrase slot (recovery key or
+            // passphrase): try each one first, treating a wrong passphrase as "not this slot".
+            let mut last: Option<Error> = None;
+            for slot in header
+                .slots
+                .iter()
+                .filter(|s| s.kind() == SlotKind::Passphrase)
+            {
+                match self.vault.unlock(&resolver, &ctx, Some(&slot.label)) {
+                    Err(e @ Error::Integrity(_)) => last = Some(e),
+                    other => return other,
+                }
+            }
+            if let Some(e) = last {
+                return Err(e);
+            }
+        }
         self.vault
             .unlock(&resolver, &ctx, self.preferred_slot.as_deref())
     }
