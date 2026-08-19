@@ -13,7 +13,7 @@ stable exit codes).
 ```text
 $ wcm get github/token
 Windows Hello: waiting for your PIN/biometric…      # ← dialog appears, once
-ghp_************************************
+ghp_16C7e42F292c6912E7710c838347Ae178B4a     # printed in clear (pipe it, or use --clip)
 ```
 
 > **Status:** v0.1.0 — usable, format frozen (v1), Windows paths awaiting wider
