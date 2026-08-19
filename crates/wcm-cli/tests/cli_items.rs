@@ -83,8 +83,8 @@ fn add_json_output_and_value_flag() {
     let out = v
         .cmd()
         .args([
-            "--json", "add", "tok", "--value", "abc", "--kind", "token", "--notes", "n",
-            "--tag", "b", "--tag", "a", "--tag", "a",
+            "--json", "add", "tok", "--value", "abc", "--kind", "token", "--notes", "n", "--tag",
+            "b", "--tag", "a", "--tag", "a",
         ])
         .output()
         .expect("run");
@@ -157,10 +157,7 @@ fn add_invalid_name_is_exit_2() {
 #[test]
 fn add_before_init_is_not_initialized() {
     let v = TestVault::new();
-    v.cmd()
-        .args(["add", "x", "--value", "y"])
-        .assert()
-        .code(5);
+    v.cmd().args(["add", "x", "--value", "y"]).assert().code(5);
 }
 
 #[test]
@@ -424,7 +421,7 @@ fn add_generate_prints_password() {
     let j = json(&out);
     assert_eq!(j["generated"], true);
     let val = j["value"].as_str().expect("value");
-    assert_eq!(val.split('-').count(), 4);
+    assert_eq!(val.split('-').count(), 4, "value: {val:?}");
     assert_eq!(get(&v, &["gen/b", "--raw"]).stdout, val.as_bytes());
 
     let out = v
@@ -453,7 +450,9 @@ fn set_field_public_and_delete() {
 
     let out = v
         .cmd()
-        .args(["--json", "set", "login", "username", "--value", "bob", "--public"])
+        .args([
+            "--json", "set", "login", "username", "--value", "bob", "--public",
+        ])
         .output()
         .expect("run");
     assert!(out.status.success(), "{}", stderr(&out));
@@ -533,7 +532,10 @@ fn set_file_stores_bytes() {
         .arg(&p)
         .assert()
         .success();
-    assert_eq!(get(&v, &["x", "--field", "blob", "--raw"]).stdout, [0u8, 255, 1]);
+    assert_eq!(
+        get(&v, &["x", "--field", "blob", "--raw"]).stdout,
+        [0u8, 255, 1]
+    );
 }
 
 // ---------------------------------------------------------------- show
@@ -545,7 +547,16 @@ fn show_masks_secrets_unless_reveal() {
         &v,
         "site",
         "s3cret",
-        &["--kind", "login", "--field", "username=alice", "--tag", "t1", "--notes", "hello"],
+        &[
+            "--kind",
+            "login",
+            "--field",
+            "username=alice",
+            "--tag",
+            "t1",
+            "--notes",
+            "hello",
+        ],
     );
     let out = v
         .cmd()
@@ -603,15 +614,28 @@ fn ls_filters_and_formats() {
     let out = v.cmd().args(["--json", "ls"]).output().expect("run");
     assert_eq!(json(&out), serde_json::json!([]));
 
-    add_stdin(&v, "git/a", "1", &["--tag", "work", "--field", "username=u"]);
+    add_stdin(
+        &v,
+        "git/a",
+        "1",
+        &["--tag", "work", "--field", "username=u"],
+    );
     add_stdin(&v, "git/b", "2", &["--kind", "token"]);
     add_stdin(&v, "other", "3", &["--tag", "home"]);
 
     let out = v.cmd().arg("ls").output().expect("run");
     assert_eq!(stdout(&out), "git/a\ngit/b\nother\n");
-    assert_eq!(stdout(&v.cmd().args(["ls", "git/"]).output().expect("run")), "git/a\ngit/b\n");
     assert_eq!(
-        stdout(&v.cmd().args(["ls", "--kind", "token"]).output().expect("run")),
+        stdout(&v.cmd().args(["ls", "git/"]).output().expect("run")),
+        "git/a\ngit/b\n"
+    );
+    assert_eq!(
+        stdout(
+            &v.cmd()
+                .args(["ls", "--kind", "token"])
+                .output()
+                .expect("run")
+        ),
         "git/b\n"
     );
     assert_eq!(
@@ -619,7 +643,12 @@ fn ls_filters_and_formats() {
         "other\n"
     );
     assert_eq!(
-        stdout(&v.cmd().args(["list", "git/", "--tag", "home"]).output().expect("run")),
+        stdout(
+            &v.cmd()
+                .args(["list", "git/", "--tag", "home"])
+                .output()
+                .expect("run")
+        ),
         ""
     );
 
@@ -633,7 +662,11 @@ fn ls_filters_and_formats() {
     assert!(text.contains("20")); // updated timestamp year
 
     // json
-    let out = v.cmd().args(["--json", "ls", "git/"]).output().expect("run");
+    let out = v
+        .cmd()
+        .args(["--json", "ls", "git/"])
+        .output()
+        .expect("run");
     let j = json(&out);
     assert_eq!(j.as_array().expect("arr").len(), 2);
     assert_eq!(j[0]["name"], "git/a");
@@ -701,7 +734,11 @@ fn mv_renames_and_handles_conflicts() {
     assert_eq!(get(&v, &["c", "--raw"]).stdout, b"va");
 
     // conflict
-    let out = v.cmd().args(["--json", "mv", "c", "b"]).output().expect("run");
+    let out = v
+        .cmd()
+        .args(["--json", "mv", "c", "b"])
+        .output()
+        .expect("run");
     assert_eq!(out.status.code(), Some(4));
     assert_eq!(json_err(&out)["error"]["code"], "ALREADY_EXISTS");
     assert_eq!(get(&v, &["b", "--raw"]).stdout, b"vb");
@@ -729,7 +766,11 @@ fn generate_without_vault() {
     assert!(out.status.success(), "{}", stderr(&out));
     assert_eq!(stdout(&out).trim_end_matches('\n').len(), 24);
 
-    let out = v.cmd().args(["gen", "40", "--no-symbols"]).output().expect("run");
+    let out = v
+        .cmd()
+        .args(["gen", "40", "--no-symbols"])
+        .output()
+        .expect("run");
     let pw = stdout(&out);
     let pw = pw.trim_end_matches('\n');
     assert_eq!(pw.len(), 40);
@@ -743,9 +784,16 @@ fn generate_without_vault() {
     let j = json(&out);
     let val = j["value"].as_str().expect("value");
     assert_eq!(val.split(' ').count(), 3);
-    assert_eq!(j["length"].as_u64().expect("len") as usize, val.chars().count());
+    assert_eq!(
+        j["length"].as_u64().expect("len") as usize,
+        val.chars().count()
+    );
 
-    let out = v.cmd().args(["--json", "generate", "12"]).output().expect("run");
+    let out = v
+        .cmd()
+        .args(["--json", "generate", "12"])
+        .output()
+        .expect("run");
     let j = json(&out);
     assert_eq!(j["length"], 12);
     assert_eq!(j["value"].as_str().expect("v").len(), 12);
