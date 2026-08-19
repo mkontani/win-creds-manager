@@ -1,0 +1,64 @@
+[workspace]
+resolver = "2"
+members = ["crates/*"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.85"
+license = "MIT"
+repository = "https://github.com/mkontani/win-creds-manager"
+authors = ["mkontani"]
+
+[workspace.dependencies]
+wcm-core = { path = "crates/wcm-core", version = "0.1.0" }
+wcm-hello = { path = "crates/wcm-hello", version = "0.1.0" }
+
+# CLI / general
+clap = { version = "4.5", features = ["derive", "env", "wrap_help"] }
+clap_complete = "4.5"
+anyhow = "1.0"
+thiserror = "2.0"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+serde_bytes = "0.11"
+ciborium = "0.2"
+zeroize = { version = "1.8", features = ["derive"] }
+secrecy = "0.10"
+# RustCrypto digest-0.10 line — do NOT mix with sha2 0.11 / hkdf 0.13 / rand 0.9
+sha2 = "0.10"
+hkdf = "0.12"
+chacha20poly1305 = "0.10"
+argon2 = "0.5"
+rsa = { version = "0.9", features = ["sha2"] }
+rand = "0.8"
+data-encoding = "2.6"
+subtle = "2.6"
+base64 = "0.22"
+# I/O
+directories = "6.0"
+tempfile = "3.10"
+fd-lock = "4.0"
+rpassword = "7.3"
+ssh-key = { version = "0.6", features = ["ed25519", "rsa", "p256", "p384", "encryption", "std"] }
+arboard = { version = "3.4", default-features = false }
+time = { version = "0.3", features = ["formatting", "parsing"] }
+# Windows
+windows = "=0.62.2"
+# tests
+assert_cmd = "2.0"
+predicates = "3.1"
+
+[workspace.lints.rust]
+unsafe_code = "warn"
+
+[workspace.lints.clippy]
+all = { level = "warn", priority = -1 }
+unwrap_used = "warn"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+strip = true
+panic = "abort"

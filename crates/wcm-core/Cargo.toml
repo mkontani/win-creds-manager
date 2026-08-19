@@ -1,0 +1,40 @@
+[package]
+name = "wcm-core"
+description = "Portable core of wcm: vault format, crypto, key slots, items"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[features]
+default = []
+test-util = []
+
+[dependencies]
+thiserror.workspace = true
+serde.workspace = true
+serde_bytes.workspace = true
+serde_json.workspace = true
+ciborium.workspace = true
+zeroize.workspace = true
+secrecy.workspace = true
+sha2.workspace = true
+hkdf.workspace = true
+chacha20poly1305.workspace = true
+argon2.workspace = true
+rsa.workspace = true
+rand.workspace = true
+data-encoding.workspace = true
+subtle.workspace = true
+base64.workspace = true
+tempfile.workspace = true
+fd-lock.workspace = true
+time.workspace = true
+
+[dev-dependencies]
+rsa = { workspace = true }
+
+[lints]
+workspace = true
