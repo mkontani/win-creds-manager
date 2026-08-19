@@ -11,7 +11,7 @@ use zeroize::Zeroizing;
 use crate::cli::{AddArgs, SecretSource};
 use crate::clip;
 use crate::context::Ctx;
-use crate::secrets::{parse_kv, resolve_secret, SecretInput, SecretOrigin};
+use crate::secrets::{parse_kv, resolve_secret, warn_if_exposed, SecretInput, SecretOrigin};
 use crate::sshkey;
 
 #[derive(Serialize)]
@@ -41,6 +41,7 @@ pub fn run(ctx: &Ctx, args: &AddArgs) -> Result<()> {
         strip_newline,
         is_interactive(&args.secret),
     )?;
+    warn_if_exposed(&ctx.out, &input);
     let generated = input.origin == SecretOrigin::Generated;
     let kind = detect_kind(explicit_kind, &input);
     let secret_text: Option<Zeroizing<String>> = std::str::from_utf8(&input.bytes)
@@ -68,7 +69,7 @@ pub fn run(ctx: &Ctx, args: &AddArgs) -> Result<()> {
         let text = secret_text
             .as_deref()
             .ok_or_else(|| Error::Invalid("cannot copy a binary value to the clipboard".into()))?;
-        clip::copy_and_notify(&ctx.out, text, clip::DEFAULT_TIMEOUT_SECS)?;
+        clip::copy_and_notify(&ctx.out, text, clip::timeout_from_env())?;
     }
     let shown_value = if generated && !args.clip {
         secret_text.as_ref().map(|s| s.to_string())

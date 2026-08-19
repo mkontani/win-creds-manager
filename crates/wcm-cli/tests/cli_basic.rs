@@ -198,3 +198,41 @@ fn completions_generate() {
         .success()
         .stdout(predicate::str::contains("wcm"));
 }
+
+#[test]
+fn env_passphrase_warns_once_per_invocation() {
+    let (v, _) = TestVault::initialized();
+    let out = v.cmd().args(["--json", "status"]).output().expect("status");
+    assert!(out.status.success());
+    let err = String::from_utf8_lossy(&out.stderr);
+    assert_eq!(
+        err.matches("WCM_PASSPHRASE is set").count(),
+        1,
+        "exactly one warning per invocation: {err}"
+    );
+    assert!(err.contains("warning: WCM_PASSPHRASE is set"), "{err}");
+    // stdout stays a clean JSON document.
+    assert_eq!(json(&out)["generation"], 1);
+
+    // --quiet suppresses it.
+    let out = v
+        .cmd()
+        .args(["--quiet", "status"])
+        .output()
+        .expect("status");
+    assert!(out.status.success());
+    assert!(
+        !String::from_utf8_lossy(&out.stderr).contains("WCM_PASSPHRASE"),
+        "--quiet must suppress the warning"
+    );
+
+    // No warning without the variable (the vault is then unopenable, but the
+    // warning must be gone before that failure).
+    let out = v
+        .cmd()
+        .env_remove("WCM_PASSPHRASE")
+        .args(["status"])
+        .output()
+        .expect("status");
+    assert!(!String::from_utf8_lossy(&out.stderr).contains("WCM_PASSPHRASE is set"));
+}

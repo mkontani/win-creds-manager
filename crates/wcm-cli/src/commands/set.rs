@@ -8,7 +8,7 @@ use wcm_core::{Error, Result};
 use crate::cli::SetArgs;
 use crate::commands::add::is_interactive;
 use crate::context::Ctx;
-use crate::secrets::resolve_secret;
+use crate::secrets::{resolve_secret, warn_if_exposed};
 
 #[derive(Serialize)]
 struct SetReport {
@@ -29,6 +29,7 @@ pub fn run(ctx: &Ctx, args: &SetArgs) -> Result<()> {
             true,
             is_interactive(&args.secret),
         )?;
+        warn_if_exposed(&ctx.out, &input);
         Some(Field {
             value: input.into_value(false),
             secret: !args.public,

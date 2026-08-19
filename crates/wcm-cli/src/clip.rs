@@ -14,6 +14,18 @@ pub const DISABLE_ENV: &str = "WCM_CLIP_DISABLE";
 /// Default seconds before the clipboard is cleared.
 pub const DEFAULT_TIMEOUT_SECS: u64 = 45;
 
+/// Environment variable overriding the clipboard timeout (also the clap default
+/// for `--clip-timeout`; commands without that flag read it here).
+pub const TIMEOUT_ENV: &str = "WCM_CLIP_TIME";
+
+/// [`TIMEOUT_ENV`] when it holds a number, else [`DEFAULT_TIMEOUT_SECS`].
+pub fn timeout_from_env() -> u64 {
+    std::env::var(TIMEOUT_ENV)
+        .ok()
+        .and_then(|v| v.trim().parse::<u64>().ok())
+        .unwrap_or(DEFAULT_TIMEOUT_SECS)
+}
+
 /// Hex SHA-256 of `text` (used to recognise our own clipboard content later).
 pub fn sha256_hex(text: &str) -> String {
     let digest = Sha256::digest(text.as_bytes());
@@ -108,6 +120,17 @@ mod tests {
         );
         assert_eq!(sha256_hex("").len(), 64);
         assert_ne!(sha256_hex("a"), sha256_hex("b"));
+    }
+
+    #[test]
+    fn timeout_env_is_parsed_with_a_fallback() {
+        // No other unit test in this crate touches WCM_CLIP_TIME.
+        assert_eq!(timeout_from_env(), DEFAULT_TIMEOUT_SECS);
+        std::env::set_var(TIMEOUT_ENV, " 7 ");
+        assert_eq!(timeout_from_env(), 7);
+        std::env::set_var(TIMEOUT_ENV, "not-a-number");
+        assert_eq!(timeout_from_env(), DEFAULT_TIMEOUT_SECS);
+        std::env::remove_var(TIMEOUT_ENV);
     }
 
     #[test]

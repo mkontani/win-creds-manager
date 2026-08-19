@@ -92,13 +92,16 @@ pub fn json(out: &std::process::Output) -> serde_json::Value {
 }
 
 /// Parses the JSON error envelope from stderr.
+///
+/// Warnings and notices share the stream (`WCM_PASSPHRASE is set`, ...), so the
+/// envelope is the last line that parses as JSON.
 pub fn json_err(out: &std::process::Output) -> serde_json::Value {
-    serde_json::from_slice(&out.stderr).unwrap_or_else(|e| {
-        panic!(
-            "invalid json error ({e}): {}",
-            String::from_utf8_lossy(&out.stderr)
-        )
-    })
+    let text = String::from_utf8_lossy(&out.stderr);
+    text.lines()
+        .rev()
+        .find_map(|l| serde_json::from_str::<serde_json::Value>(l.trim()).ok())
+        .filter(|v| v.get("error").is_some())
+        .unwrap_or_else(|| panic!("no json error envelope in stderr: {text}"))
 }
 
 /// Writes a file in the test dir.

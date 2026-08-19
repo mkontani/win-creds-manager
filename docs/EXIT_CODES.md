@@ -38,7 +38,25 @@ process still exits with the code above:
 ```
 
 `hint` is omitted when there is none. stdout stays empty on error, so
-`wcm --json ... | jq` never sees a partial document.
+`wcm --json ... | jq` never sees a partial document. stderr also carries
+human-readable diagnostics (for example `warning: WCM_PASSPHRASE is set; …`),
+so parse the **last** line of stderr as the envelope, or run with `--quiet`.
+
+## `wcm run` and the child's exit code
+
+`wcm run --env … -- cmd …` is the one command that does **not** use the table
+above for the command it launches:
+
+* the child's exit status is returned verbatim, including codes that collide
+  with the wcm table (`wcm run -- sh -c 'exit 3'` exits `3`, not "not found")
+  and codes above 125;
+* a child killed by a signal exits `130` (`INTERRUPTED`);
+* wcm's own failures *before* the child starts still use the table — for
+  example a bad `--env` mapping is `2`, an unknown item `3`, and a command that
+  cannot be executed `11` (`HELPER`).
+
+So a script that needs to tell "wcm failed" from "the command failed" should
+check the mapping arguments up front, or treat every code as the child's.
 
 ## Mapping to `wcm_core::Error`
 

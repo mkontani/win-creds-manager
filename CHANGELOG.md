@@ -21,6 +21,15 @@ in [docs/FORMAT.md](docs/FORMAT.md); format changes are called out explicitly.
   remaining slot still references the same credential. A failed re-seal or save
   used to leave the vault unopenable.
 
+### Added
+
+- One warning per invocation when `WCM_PASSPHRASE` is set (`--quiet` suppresses
+  it) and one when a secret is passed with the hidden `--value` flag.
+- `wcm add --clip` honours `WCM_CLIP_TIME` like `get --clip` and `generate
+  --clip` (it always used the 45 s default).
+- docs/EXIT_CODES.md documents the `wcm run` exit-code passthrough and that
+  stderr may carry warnings before the `--json` error envelope.
+
 ### Changed
 
 - `wcm slot rm` refuses to remove the last passphrase/recovery slot: a vault

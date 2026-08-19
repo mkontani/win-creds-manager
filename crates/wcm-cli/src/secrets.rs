@@ -137,6 +137,16 @@ pub fn resolve_secret(
     })
 }
 
+/// Warns when the secret came from `--value`.
+///
+/// Command-line arguments are visible to every process on the machine
+/// (`ps`, `/proc`, Task Manager), so the flag is hidden and discouraged.
+pub fn warn_if_exposed(out: &crate::output::Output, input: &SecretInput) {
+    if input.origin == SecretOrigin::Value {
+        out.warn("--value exposes the secret in process listings; prefer --stdin");
+    }
+}
+
 /// Parses `KEY=VALUE`.
 pub fn parse_kv(s: &str) -> Result<(String, String)> {
     let (k, v) = s

@@ -880,3 +880,39 @@ fn unclip_always_succeeds() {
         .assert()
         .success();
 }
+
+#[test]
+fn value_flag_warns_about_process_listings() {
+    let (v, _) = TestVault::initialized();
+    let out = v
+        .cmd()
+        .args(["add", "exposed", "--value", "hunter2"])
+        .output()
+        .expect("run add");
+    assert!(out.status.success(), "{}", stderr(&out));
+    assert!(
+        stderr(&out).contains("--value exposes the secret in process listings"),
+        "{}",
+        stderr(&out)
+    );
+    // The warning never repeats the secret itself.
+    assert!(!stderr(&out).contains("hunter2"));
+
+    let out = v
+        .cmd()
+        .args(["set", "exposed", "url", "--value", "https://e", "--public"])
+        .output()
+        .expect("run set");
+    assert!(out.status.success(), "{}", stderr(&out));
+    assert!(stderr(&out).contains("--value exposes the secret"));
+
+    // --stdin does not warn.
+    let out = v
+        .cmd()
+        .args(["add", "piped", "--stdin"])
+        .write_stdin("s3cret\n")
+        .output()
+        .expect("run add");
+    assert!(out.status.success(), "{}", stderr(&out));
+    assert!(!stderr(&out).contains("--value exposes"));
+}

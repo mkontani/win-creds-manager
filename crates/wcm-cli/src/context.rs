@@ -13,7 +13,7 @@ use wcm_hello::{DpapiEnvelope, HelloOptions};
 
 use crate::cli::Cli;
 use crate::output::Output;
-use crate::prompt::{passphrase_from_env, CliPrompter};
+use crate::prompt::{passphrase_from_env, CliPrompter, PASSPHRASE_ENV};
 
 /// Environment variable overriding the default data directory (tests).
 pub const DATA_DIR_ENV: &str = "WCM_DATA_DIR";
@@ -34,17 +34,21 @@ pub struct Ctx {
 
 impl Ctx {
     /// Builds the context from parsed arguments.
+    ///
+    /// Emits the one-per-invocation `WCM_PASSPHRASE` warning.
     pub fn from_cli(cli: &Cli) -> Result<Ctx> {
         let path = match &cli.vault {
             Some(p) => p.clone(),
             None => default_vault_path()?,
         };
+        let out = Output {
+            json: cli.json,
+            quiet: cli.quiet,
+        };
+        warn_env_passphrase(&out);
         Ok(Ctx {
             vault: Vault::new(path),
-            out: Output {
-                json: cli.json,
-                quiet: cli.quiet,
-            },
+            out,
             prompter: CliPrompter {
                 no_input: cli.no_input,
                 quiet: cli.quiet,
@@ -177,6 +181,19 @@ impl SlotResolver for CliResolver {
             }
             SlotKind::Passphrase => Some((&self.passphrase, &self.identity)),
         }
+    }
+}
+
+/// Warns once per invocation when the passphrase comes from the environment.
+///
+/// `WCM_PASSPHRASE` bypasses every prompt, so an exported variable silently
+/// turns an interactive vault into an unattended one. Suppressed by `--quiet`.
+fn warn_env_passphrase(out: &Output) {
+    let set = std::env::var_os(PASSPHRASE_ENV).is_some_and(|v| !v.is_empty());
+    if set && !out.quiet {
+        out.warn(&format!(
+            "{PASSPHRASE_ENV} is set; passphrase prompts are bypassed"
+        ));
     }
 }
 
