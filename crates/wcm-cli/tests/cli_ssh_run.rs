@@ -267,7 +267,12 @@ fn ssh_add_missing_ssh_add_is_helper_error() {
     assert_eq!(out.status.code(), Some(11));
     assert_eq!(json_err(&out)["error"]["code"], "HELPER");
 
-    // Nothing on PATH.
+    // Nothing on PATH. (On Windows the built-in OpenSSH fallback
+    // C:\Windows\System32\OpenSSH\ssh-add.exe is usually installed, so the
+    // "not found" path cannot be provoked there.)
+    if cfg!(windows) {
+        return;
+    }
     let out = wcm(&v)
         .env("PATH", "")
         .args(["--json", "ssh", "add", "k"])

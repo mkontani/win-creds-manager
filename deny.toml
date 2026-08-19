@@ -20,7 +20,13 @@ db-urls = ["https://github.com/rustsec/advisory-db"]
 # Vulnerabilities fail the check; unmaintained / unsound / notices only warn.
 version = 2
 yanked = "warn"
-ignore = []
+ignore = [
+    # RUSTSEC-2023-0071 (Marvin attack): timing side channel in RSA *private-key*
+    # operations of the `rsa` crate. wcm only uses `rsa` to verify the Windows
+    # Hello signature with the *public* key (rsa::pkcs1v15::VerifyingKey); the
+    # private key lives in the TPM/NGC and is never handled by this crate.
+    { id = "RUSTSEC-2023-0071", reason = "rsa is used for public-key signature verification only" },
+]
 
 [licenses]
 version = 2
