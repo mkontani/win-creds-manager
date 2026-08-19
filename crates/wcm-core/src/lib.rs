@@ -5,7 +5,10 @@
 
 pub mod crypto;
 pub mod error;
+pub mod export;
+pub mod generate;
 pub mod item;
+pub mod recovery_key;
 pub mod slot;
 pub mod vault;
 
