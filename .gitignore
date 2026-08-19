@@ -9,3 +9,4 @@
 *.wcm.bak
 .env
 *.profraw
+.claude/

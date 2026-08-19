@@ -715,9 +715,9 @@ fn slot_ls_add_rm_lifecycle() {
     assert_eq!(r["label"], "second");
     assert_eq!(r["kind"], "passphrase");
     assert_eq!(slot_labels(&v), vec!["recovery", "passphrase", "second"]);
-    // The new slot opens the vault (with several passphrase slots, `--slot`
-    // selects which one the passphrase is meant for; without it the first
-    // non-recovery passphrase slot is tried and a mismatch is an integrity error).
+    // The new slot opens the vault. `--slot` pins the slot; without it an
+    // env-supplied passphrase is tried against every passphrase slot, so it
+    // still works — and a passphrase matching no slot is an integrity error.
     let out = v
         .cmd()
         .env("WCM_PASSPHRASE", "second-pass")
@@ -734,6 +734,17 @@ fn slot_ls_add_rm_lifecycle() {
     let out = v
         .cmd()
         .env("WCM_PASSPHRASE", "second-pass")
+        .args(["export", "--plaintext", "--i-know"])
+        .output()
+        .expect("run");
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let out = v
+        .cmd()
+        .env("WCM_PASSPHRASE", "matches-no-slot")
         .args(["export", "--plaintext", "--i-know"])
         .output()
         .expect("run");
