@@ -34,6 +34,12 @@ impl TestVault {
         if let Some(path) = std::env::var_os("PATH") {
             c.env("PATH", path);
         }
+        // Keep coverage instrumentation working under `cargo llvm-cov`: the spawned
+        // binary must know where to write its profile, otherwise it drops a
+        // `default_*.profraw` in the crate dir that is never merged.
+        if let Some(p) = std::env::var_os("LLVM_PROFILE_FILE") {
+            c.env("LLVM_PROFILE_FILE", p);
+        }
         c.env("WCM_VAULT", self.path());
         c.env("WCM_PASSPHRASE", PASS);
         c.env("WCM_NO_WSL_PROXY", "1");

@@ -8,3 +8,4 @@
 !crates/wcm-core/tests/vectors/**/*.wcm
 *.wcm.bak
 .env
+*.profraw
