@@ -109,14 +109,26 @@ impl Error {
             ("ALREADY_EXISTS", 4, "item already exists"),
             ("NOT_INITIALIZED", 5, "vault not initialized"),
             ("AUTH_CANCELLED", 6, "Windows Hello prompt cancelled"),
-            ("AUTH_UNAVAILABLE", 7, "no usable key slot / Hello unavailable"),
+            (
+                "AUTH_UNAVAILABLE",
+                7,
+                "no usable key slot / Hello unavailable",
+            ),
             ("INTEGRITY", 8, "vault integrity or decryption failure"),
             ("LOCKED", 9, "vault locked or concurrently modified"),
             ("IO", 10, "file system error"),
             ("HELPER", 11, "clipboard / ssh-add helper failure"),
             ("FORMAT", 12, "import/export format error"),
-            ("WSL_INTEROP_BROKEN", EXIT_WSL_INTEROP_BROKEN, "WSL interop cannot launch Windows executables"),
-            ("WSL_EXE_NOT_FOUND", EXIT_WSL_EXE_NOT_FOUND, "wcm.exe not found from WSL"),
+            (
+                "WSL_INTEROP_BROKEN",
+                EXIT_WSL_INTEROP_BROKEN,
+                "WSL interop cannot launch Windows executables",
+            ),
+            (
+                "WSL_EXE_NOT_FOUND",
+                EXIT_WSL_EXE_NOT_FOUND,
+                "wcm.exe not found from WSL",
+            ),
             ("INTERRUPTED", EXIT_INTERRUPTED, "interrupted"),
         ]
     }
@@ -166,7 +178,11 @@ mod tests {
             let entry = table.iter().find(|(_, exit, _)| *exit == e.exit_code());
             assert!(entry.is_some(), "missing table entry for {e:?}");
             if e.exit_code() != 2 {
-                assert_eq!(entry.map(|t| t.0), Some(e.code()), "code mismatch for {e:?}");
+                assert_eq!(
+                    entry.map(|t| t.0),
+                    Some(e.code()),
+                    "code mismatch for {e:?}"
+                );
             }
         }
     }
