@@ -953,10 +953,25 @@ fn key_rotating_commands_remove_the_stale_backup() {
 }
 
 #[cfg(unix)]
+fn is_root() -> bool {
+    // Portable enough for tests: `id -u` via the shell.
+    std::process::Command::new("id")
+        .arg("-u")
+        .output()
+        .map(|o| String::from_utf8_lossy(&o.stdout).trim() == "0")
+        .unwrap_or(false)
+}
+
+#[cfg(unix)]
 #[test]
 fn recover_that_cannot_save_leaves_the_vault_openable() {
     use std::os::unix::fs::PermissionsExt;
 
+    // A read-only directory does not stop root (e.g. CI containers); skip there.
+    if is_root() {
+        eprintln!("skipping: running as root, read-only directories are not enforced");
+        return;
+    }
     let (v, key) = TestVault::initialized();
     import_items(&v, "in.json", vec![password("a", "a1")], &[]);
     let before = slot_labels(&v);
