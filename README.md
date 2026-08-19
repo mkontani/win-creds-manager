@@ -129,7 +129,7 @@ commands such as `wcm get a b c`.
 | `wcm rekey` | Rotate the DEK and re-seal every slot | 1 + recovery key |
 | `wcm slot ls` | List key slots (no unlock) | 0 |
 | `wcm slot add --passphrase\|--hello [--label L] [--no-dpapi]` | Add a key slot | 1 |
-| `wcm slot rm <label> [-f]` | Remove a key slot (the last one cannot be removed) | 1 |
+| `wcm slot rm <label> [-f]` | Remove a key slot (the last slot — and the last passphrase/recovery slot — cannot be removed) | 1 |
 | `wcm status` | Vault path, id, generation, slots — no unlock | 0 |
 | `wcm doctor [--hello-selftest]` | Environment diagnostics (Hello, TPM, session, DPAPI, WSL, ssh-add) | 0 (2 with selftest) |
 | `wcm completions <shell>` | Shell completions (bash, zsh, fish, powershell, elvish) | 0 |
@@ -160,9 +160,10 @@ or `wcm --exit-codes`.
 ## JSON mode
 
 Add `--json` to any command: stdout carries exactly one JSON document, stderr
-carries notices (or, on failure, a single `{"error":{code,message,hint,exit}}`
-envelope). Secrets are only included where the command's purpose is to output
-them (`get`, `show --reveal`, `export --plaintext`).
+carries notices and warnings (on failure its **last** line is a single
+`{"error":{code,message,hint,exit}}` envelope). Secrets are only included where
+the command's purpose is to output them (`get`, `show --reveal`,
+`export --plaintext`).
 
 ```bash
 wcm --json status | jq '.slots[] | {label, kind}'
@@ -176,9 +177,10 @@ wcm --json init --no-hello --passphrase | jq -r .recovery_key   # scripted setup
 |---|---|
 | `WCM_VAULT` | Vault file path (same as `--vault`). |
 | `WCM_DATA_DIR` | Directory used for the default vault path (`$WCM_DATA_DIR/vault.wcm`) instead of `%LOCALAPPDATA%\wcm` / `$XDG_DATA_HOME/wcm`. Mainly for tests. |
-| `WCM_PASSPHRASE` | Passphrase or recovery key used **without prompting**. ⚠️ For tests and automation only: it bypasses the interactive prompt and is visible to every process that can read your environment. `wcm doctor` reports it as a problem. |
+| `WCM_PASSPHRASE` | Passphrase or recovery key used **without prompting**. ⚠️ For tests and automation only: it bypasses the interactive prompt and is visible to every process that can read your environment. Every run warns on stderr (silence it with `-q`), `wcm doctor` reports it as a problem, and child processes started by `wcm run`/`ssh add` never inherit it. |
 | `WCM_EXPORT_PASSPHRASE` | Passphrase for `wcm export` / `wcm import` of encrypted exports (non-interactive). Same warning as above. |
-| `WCM_CLIP_TIME` | Default clipboard clear timeout in seconds for `--clip` (default 45). |
+| `WCM_NEW_PASSPHRASE` | New passphrase used by `recover`, `rekey` and `slot add` without prompting (falls back to `WCM_PASSPHRASE`). Same warning as above. |
+| `WCM_CLIP_TIME` | Clipboard clear timeout in seconds for every `--clip` (default 45). |
 | `WCM_CLIP_DISABLE` | When set, `--clip` is refused instead of touching the clipboard (helper error, exit 11) — for environments where the clipboard must never be used. |
 | `WCM_SSH_ADD` | Path of the `ssh-add` executable (default: from `PATH`, then `C:\Windows\System32\OpenSSH\ssh-add.exe`). |
 | `WCM_WINDOWS_EXE` | WSL only: explicit path of `wcm.exe` (Linux or Windows path). |

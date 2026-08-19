@@ -46,7 +46,9 @@ trusting the tool with anything important. The on-disk details are in
 | **Weak or reused passphrase material** | Argon2id 64 MiB/3 passes per slot, 32-byte random salt per slot, HKDF domain separation per slot kind and vault id. The recovery key is 144 random bits. |
 | **Partial writes / crashes during save** | Temp file + fsync (file *and* directory on unix) + atomic rename; the previous generation is kept as `vault.wcm.bak` (see [The `.bak` file](#the-bak-file)). |
 | **Two wcm processes racing** | Advisory lock on `vault.wcm.lock` plus a generation check: the second writer gets exit 9 (`LOCKED`) instead of clobbering. |
-| **Secrets in terminal scrollback / logs** | Secret values are masked in `show` (use `--reveal`), never printed by `ls`, never included in stderr diagnostics or JSON error envelopes. `--clip` clears the clipboard after a timeout. Binary values are refused on a TTY (`--out-file`). |
+| **Secrets in terminal scrollback / logs** | Secret values are masked in `show` with a fixed-width mask that does not reveal their length (use `--reveal`), never printed by `ls`, never included in stderr diagnostics or JSON error envelopes. `--clip` clears the clipboard after a timeout. Binary values are refused on a TTY (`--out-file`). Files wcm writes secrets into (`--out-file`, plaintext export) are created `0600`. |
+| **Secrets leaking into commands wcm launches** | `wcm run`, the `ssh-add` helper and the detached `wcm unclip` start with `WCM_PASSPHRASE`, `WCM_EXPORT_PASSPHRASE` and `WCM_NEW_PASSPHRASE` removed from their environment; `run` only passes the values it was asked to inject. |
+| **Hostile import files** | Item names, field keys, notes and tags from an export are validated before anything is stored (no control characters, no terminal escapes); a malformed document imports nothing (exit 12). |
 
 ### What wcm does NOT protect against
 
@@ -99,7 +101,8 @@ trusting the tool with anything important. The on-disk details are in
 * Store the recovery key offline or in a *different* password manager. Do not
   keep it next to the vault file.
 * Prefer `--stdin`, `--file` or the interactive prompt over the hidden
-  `--value` flag (command-line arguments are visible in process listings).
+  `--value` flag (command-line arguments are visible in process listings; wcm
+  warns when you use it).
 * Back up `vault.wcm` freely; it is useless without a key slot secret. Keep
   `vault.wcm.bak` as well if you want one generation of history — but read
   [The `.bak` file](#the-bak-file) first.
