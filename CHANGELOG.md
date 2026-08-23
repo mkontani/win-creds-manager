@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 The vault file format has its own major version (magic `WCM\x01`), documented
 in [docs/FORMAT.md](docs/FORMAT.md); format changes are called out explicitly.
 
+## [0.1.2] - 2026-08-24
+
+### Fixed
+
+- `wcm doctor` run from WSL used to print `wsl: no`: the shim correctly
+  proxied to `wcm.exe`, but the Windows side had no way to know it was
+  launched from WSL and reported the default. The shim now exports the WSL
+  flavour and the `wcm.exe` path (as seen from WSL) through `WSLENV`
+  (`WCM_WSL_KIND`, `WCM_WSL_EXE`), and `wcm.exe`'s `doctor` reports
+  `wsl: WSL1|WSL2 (wcm.exe: …)` as documented. Both sides ship together:
+  update the Linux shim and `wcm.exe` to 0.1.2.
+
 ## [0.1.1] - 2026-08-24
 
 ### Fixed
@@ -141,5 +153,6 @@ Initial release.
 - `WCM_PASSPHRASE` / `WCM_EXPORT_PASSPHRASE` bypass prompts and are reported
   by `wcm doctor`; intended for tests and automation only.
 
+[0.1.2]: https://github.com/mkontani/win-creds-manager/releases/tag/v0.1.2
 [0.1.1]: https://github.com/mkontani/win-creds-manager/releases/tag/v0.1.1
 [0.1.0]: https://github.com/mkontani/win-creds-manager/releases/tag/v0.1.0
