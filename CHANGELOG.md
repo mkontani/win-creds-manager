@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 The vault file format has its own major version (magic `WCM\x01`), documented
 in [docs/FORMAT.md](docs/FORMAT.md); format changes are called out explicitly.
 
+## [0.1.1] - 2026-08-24
+
+### Fixed
+
+- The Linux release tarball is now built for `x86_64-unknown-linux-musl` and
+  statically linked. The previous `x86_64-unknown-linux-gnu` build (made on
+  `ubuntu-latest`) required the runner's glibc and failed to start on distros
+  with an older glibc — notably WSL1 installs, where it aborted with
+  `` version `GLIBC_2.32' not found `` (or similar). The static binary runs on
+  any distro and on WSL1/WSL2 regardless of glibc. The tarball name changes
+  accordingly (`wcm-<version>-x86_64-unknown-linux-musl.tar.gz`).
+
+### Changed
+
+- CI cross-checks `x86_64-unknown-linux-musl`; the release workflow verifies
+  the Linux binary is statically linked and smoke-tests it before packaging.
+
 ## [0.1.0] - 2026-08-23
 
 Initial release.
@@ -124,4 +141,5 @@ Initial release.
 - `WCM_PASSPHRASE` / `WCM_EXPORT_PASSPHRASE` bypass prompts and are reported
   by `wcm doctor`; intended for tests and automation only.
 
+[0.1.1]: https://github.com/mkontani/win-creds-manager/releases/tag/v0.1.1
 [0.1.0]: https://github.com/mkontani/win-creds-manager/releases/tag/v0.1.0
