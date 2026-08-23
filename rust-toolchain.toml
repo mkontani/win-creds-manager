@@ -1,4 +1,12 @@
 [toolchain]
 channel = "1.89"
 components = ["rustfmt", "clippy"]
-targets = ["x86_64-pc-windows-msvc", "aarch64-pc-windows-msvc", "x86_64-pc-windows-gnu"]
+# rustup installs THIS list for the "1.89" toolchain the file selects; targets
+# passed to dtolnay/rust-toolchain in CI land on a different toolchain (1.89.0)
+# and are not seen by cargo. The release WSL-shim tarball needs linux-musl.
+targets = [
+    "x86_64-pc-windows-msvc",
+    "aarch64-pc-windows-msvc",
+    "x86_64-pc-windows-gnu",
+    "x86_64-unknown-linux-musl",
+]
