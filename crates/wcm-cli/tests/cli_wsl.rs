@@ -47,6 +47,8 @@ fn fake_exe(dir: &Path) -> PathBuf {
         r#"#!/bin/sh
 printf 'ARGS:%s\n' "$*" > "$FAKE_OUT/exe.args"
 printf 'LAUNCHED:%s\n' "$WCM_LAUNCHED_FROM_WSL" >> "$FAKE_OUT/exe.args"
+printf 'KIND:%s\n' "$WCM_WSL_KIND" >> "$FAKE_OUT/exe.args"
+printf 'EXE:%s\n' "$WCM_WSL_EXE" >> "$FAKE_OUT/exe.args"
 printf 'WSLENV:%s\n' "$WSLENV" >> "$FAKE_OUT/exe.args"
 printf 'PASS:%s\n' "$WCM_PASSPHRASE" >> "$FAKE_OUT/exe.args"
 if [ -n "$FAKE_EXE_RC" ]; then echo "fake failure" >&2; exit "$FAKE_EXE_RC"; fi
@@ -235,9 +237,12 @@ fn args_env_and_exit_code_are_forwarded() {
         "{rec}"
     );
     assert!(rec.contains("LAUNCHED:1\n"), "{rec}");
+    assert!(rec.contains("KIND:WSL2\n"), "{rec}");
+    assert!(rec.contains(&format!("EXE:{}\n", exe.display())), "{rec}");
     assert!(
         rec.contains(
-            "WSLENV:FOO/p:WCM_LAUNCHED_FROM_WSL/w:WCM_PASSPHRASE/w:WCM_EXPORT_PASSPHRASE/w\n"
+            "WSLENV:FOO/p:WCM_LAUNCHED_FROM_WSL/w:WCM_WSL_KIND/w:WCM_WSL_EXE/w:\
+             WCM_PASSPHRASE/w:WCM_EXPORT_PASSPHRASE/w\n"
         ),
         "{rec}"
     );
