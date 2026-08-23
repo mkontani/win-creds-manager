@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 The vault file format has its own major version (magic `WCM\x01`), documented
 in [docs/FORMAT.md](docs/FORMAT.md); format changes are called out explicitly.
 
-## [Unreleased]
+## [0.1.0] - 2026-08-23
 
 ### Added
 

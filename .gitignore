@@ -11,3 +11,6 @@
 .env
 *.profraw
 .claude/
+
+# Development-only docs (kept local, not pushed)
+docs/superpowers/

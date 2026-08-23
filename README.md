@@ -208,9 +208,8 @@ cargo check --workspace --target x86_64-pc-windows-msvc
 
 Crates: `wcm-core` (format, crypto, slots, items — portable, no unsafe),
 `wcm-hello` (Windows Hello / DPAPI / focus / session; stubbed off-Windows),
-`wcm-cli` (the `wcm` binary). Design notes live under
-[docs/superpowers/](docs/superpowers/). Changes are tracked in
-[CHANGELOG.md](CHANGELOG.md).
+`wcm-cli` (the `wcm` binary). Design notes are kept locally
+(not in this repository). Changes are tracked in [CHANGELOG.md](CHANGELOG.md).
 
 ## License
 
