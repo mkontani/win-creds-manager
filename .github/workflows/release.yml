@@ -26,7 +26,10 @@ jobs:
           - target: aarch64-pc-windows-msvc
             os: windows-latest
             archive: zip
-          - target: x86_64-unknown-linux-gnu
+          # musl (fully static): the WSL shim must run on any distro's glibc,
+          # including old WSL1 installs (gnu builds on ubuntu-latest require
+          # the runner's glibc and fail with "GLIBC_x.yz not found" there).
+          - target: x86_64-unknown-linux-musl
             os: ubuntu-latest
             archive: tar.gz
           - target: aarch64-apple-darwin
@@ -44,8 +47,22 @@ jobs:
         with:
           key: ${{ matrix.target }}
 
+      - name: Install musl-tools
+        if: matrix.target == 'x86_64-unknown-linux-musl'
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq musl-tools
+
       - name: Build
         run: cargo build --release --locked -p wcm-cli --target ${{ matrix.target }}
+
+      - name: Smoke test (static Linux binary)
+        if: matrix.target == 'x86_64-unknown-linux-musl'
+        env:
+          TARGET: ${{ matrix.target }}
+        run: |
+          set -euo pipefail
+          # "statically linked" or "static-pie linked", never "dynamically linked"
+          file "target/${TARGET}/release/wcm" | tee /dev/stderr | grep -q "static"
+          "target/${TARGET}/release/wcm" version
 
       - name: Package (zip, Windows)
         if: matrix.archive == 'zip'

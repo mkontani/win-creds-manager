@@ -62,7 +62,8 @@ associated data, so tampering is detected. Full details:
 Download `wcm-<version>-x86_64-pc-windows-msvc.zip` (or `aarch64`) from the
 [GitHub Releases](https://github.com/mkontani/win-creds-manager/releases)
 page, verify it against `SHA256SUMS.txt`, unzip and put `wcm.exe` on your
-`PATH` (e.g. `%LOCALAPPDATA%\Programs\wcm\`). Linux (`x86_64-unknown-linux-gnu`)
+`PATH` (e.g. `%LOCALAPPDATA%\Programs\wcm\`). Linux (`x86_64-unknown-linux-musl`,
+statically linked — runs on any distro and on WSL1/WSL2 regardless of glibc)
 and macOS (`aarch64-apple-darwin`) tarballs are provided for the WSL shim and
 for opening recovery/passphrase-only vaults off-Windows.
 

@@ -158,7 +158,7 @@ once, then omit the flag). Delete `C:\wcm-test` when done.
 
 Do this in **both** a WSL1 and a WSL2 distro. Build or copy the Linux `wcm`
 binary into the distro (`cargo build -p wcm-cli` inside WSL, or the
-`x86_64-unknown-linux-gnu` release tarball).
+`x86_64-unknown-linux-musl` release tarball).
 
 46. `wcm doctor` from WSL → `wsl: WSL2 (wcm.exe: /mnt/c/…/wcm.exe)` (or WSL1);
     the output otherwise matches the Windows one (it was produced by `wcm.exe`). ☐

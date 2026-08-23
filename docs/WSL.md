@@ -49,8 +49,9 @@ in `/etc/wsl.conf`, on by default).
 
 ### Option A — install the Linux build of `wcm` (recommended)
 
-Build or install the `x86_64-unknown-linux-gnu` `wcm` binary inside your
-distro (`cargo build -p wcm-cli`, or the release tarball) and put it on
+Install the `x86_64-unknown-linux-musl` release tarball (statically linked,
+works on any distro/glibc — including old WSL1 installs) or build inside your
+distro (`cargo build -p wcm-cli`), and put the `wcm` binary on
 `$PATH`, e.g. `/usr/local/bin/wcm`. This is the shim described in the rest
 of this document: it detects WSL automatically, locates `wcm.exe`,
 translates `--vault`/`--file`/etc. with `wslpath`, injects `$WCM_VAULT`, and
