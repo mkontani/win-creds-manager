@@ -9,6 +9,8 @@ in [docs/FORMAT.md](docs/FORMAT.md); format changes are called out explicitly.
 
 ## [0.1.0] - 2026-08-23
 
+Initial release.
+
 ### Added
 
 - One warning per invocation when `WCM_PASSPHRASE` is set (`--quiet` suppresses
@@ -70,7 +72,6 @@ in [docs/FORMAT.md](docs/FORMAT.md); format changes are called out explicitly.
   backup is a full copy of the previous generation and still opens with the key
   material those commands revoke (documented in [docs/SECURITY.md](docs/SECURITY.md)).
 
-## [0.1.0] - 2026-08-19
 
 ### Added
 
@@ -123,5 +124,4 @@ in [docs/FORMAT.md](docs/FORMAT.md); format changes are called out explicitly.
 - `WCM_PASSPHRASE` / `WCM_EXPORT_PASSPHRASE` bypass prompts and are reported
   by `wcm doctor`; intended for tests and automation only.
 
-[Unreleased]: https://github.com/mkontani/win-creds-manager/compare/v0.1.0...HEAD
 [0.1.0]: https://github.com/mkontani/win-creds-manager/releases/tag/v0.1.0
