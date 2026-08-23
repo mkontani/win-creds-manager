@@ -20,6 +20,10 @@ pub const ENV_WINDOWS_EXE: &str = "WCM_WINDOWS_EXE";
 pub const ENV_NO_PROXY: &str = "WCM_NO_WSL_PROXY";
 /// Set on the child: marks an invocation that already went through the shim.
 pub const ENV_LAUNCHED: &str = "WCM_LAUNCHED_FROM_WSL";
+/// Set on the child: WSL flavour (`WSL1`/`WSL2`), shown by wcm.exe's `doctor`.
+pub const ENV_WSL_KIND: &str = "WCM_WSL_KIND";
+/// Set on the child: `wcm.exe` path as seen from WSL, shown by wcm.exe's `doctor`.
+pub const ENV_WSL_EXE: &str = "WCM_WSL_EXE";
 /// Vault path environment variable (translated into `--vault` for wcm.exe).
 pub const ENV_VAULT: &str = "WCM_VAULT";
 /// Set by WSL2 on interop-enabled sessions.
@@ -27,7 +31,8 @@ pub const ENV_WSL_INTEROP: &str = "WSL_INTEROP";
 /// Windows binary name.
 pub const WINDOWS_EXE_NAME: &str = "wcm.exe";
 /// WSLENV entries the shim appends so wcm.exe sees them.
-pub const WSLENV_EXTRA: &str = "WCM_LAUNCHED_FROM_WSL/w:WCM_PASSPHRASE/w:WCM_EXPORT_PASSPHRASE/w";
+pub const WSLENV_EXTRA: &str = "WCM_LAUNCHED_FROM_WSL/w:WCM_WSL_KIND/w:WCM_WSL_EXE/w:\
+                                WCM_PASSPHRASE/w:WCM_EXPORT_PASSPHRASE/w";
 /// `errno` value of `Exec format error` (identical on every Linux architecture).
 pub const ENOEXEC: i32 = 8;
 
@@ -238,6 +243,23 @@ pub fn extend_wslenv(existing: Option<&str>) -> String {
         Some(e) => format!("{e}:{WSLENV_EXTRA}"),
         None => WSLENV_EXTRA.to_string(),
     }
+}
+
+/// WSL context the shim exports to its wcm.exe child (see [`WSLENV_EXTRA`]).
+#[cfg_attr(target_os = "linux", allow(dead_code))] // read by `doctor` on the wcm.exe side
+pub struct ShimWslContext {
+    pub kind: Option<String>,
+    pub windows_exe: Option<String>,
+}
+
+/// `Some` when this process was proxied from WSL by the shim — the wcm.exe
+/// side of the boundary; `None` for a plain Windows run.
+#[cfg_attr(target_os = "linux", allow(dead_code))]
+pub fn shim_wsl_context(env: &Env) -> Option<ShimWslContext> {
+    env.contains_key(ENV_LAUNCHED).then(|| ShimWslContext {
+        kind: env.get(ENV_WSL_KIND).filter(|v| !v.is_empty()).cloned(),
+        windows_exe: env.get(ENV_WSL_EXE).filter(|v| !v.is_empty()).cloned(),
+    })
 }
 
 /// `--json` given (before any `--`)?
@@ -752,6 +774,39 @@ mod tests {
         );
         let once = extend_wslenv(Some("X"));
         assert_eq!(extend_wslenv(Some(&once)), once);
+    }
+
+    #[test]
+    fn wslenv_extra_carries_shim_context() {
+        for entry in ["WCM_LAUNCHED_FROM_WSL/w", "WCM_WSL_KIND/w", "WCM_WSL_EXE/w"] {
+            assert!(
+                WSLENV_EXTRA.split(':').any(|x| x == entry),
+                "{entry} missing from WSLENV_EXTRA"
+            );
+        }
+    }
+
+    #[test]
+    fn shim_wsl_context_reads_proxied_env() {
+        // Plain (non-proxied) run: no context.
+        assert!(shim_wsl_context(&env(&[])).is_none());
+        // Proxied run: the shim exported kind and exe path through WSLENV.
+        let ctx = shim_wsl_context(&env(&[
+            ("WCM_LAUNCHED_FROM_WSL", "1"),
+            ("WCM_WSL_KIND", "WSL2"),
+            ("WCM_WSL_EXE", "/mnt/c/Users/u/wcm.exe"),
+        ]))
+        .expect("proxied run must yield a context");
+        assert_eq!(ctx.kind.as_deref(), Some("WSL2"));
+        assert_eq!(ctx.windows_exe.as_deref(), Some("/mnt/c/Users/u/wcm.exe"));
+        // Launched flag alone: detected, but details unknown (empty values dropped).
+        let ctx = shim_wsl_context(&env(&[
+            ("WCM_LAUNCHED_FROM_WSL", "1"),
+            ("WCM_WSL_KIND", ""),
+        ]))
+        .expect("proxied run must yield a context");
+        assert!(ctx.kind.is_none());
+        assert!(ctx.windows_exe.is_none());
     }
 
     #[test]

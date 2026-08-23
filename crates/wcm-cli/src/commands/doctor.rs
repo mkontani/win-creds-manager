@@ -241,5 +241,15 @@ fn wsl_report() -> WslReport {
 
 #[cfg(not(target_os = "linux"))]
 fn wsl_report() -> WslReport {
-    WslReport::default()
+    // A run proxied from WSL carries the shim's context through WSLENV
+    // (kind + wcm.exe path as seen from WSL); a plain run reports "no".
+    let env: crate::wsl_core::Env = std::env::vars().collect();
+    match crate::wsl_core::shim_wsl_context(&env) {
+        Some(ctx) => WslReport {
+            detected: true,
+            kind: ctx.kind,
+            windows_exe: ctx.windows_exe,
+        },
+        None => WslReport::default(),
+    }
 }

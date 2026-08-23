@@ -19,7 +19,7 @@ use zeroize::Zeroizing;
 pub use crate::wsl_core::WslKind;
 use crate::wsl_core::{
     self, Env, ExeKind, SshAction, SshAgentOp, ENV_LAUNCHED, ENV_NO_PROXY, ENV_WINDOWS_EXE,
-    WINDOWS_EXE_NAME,
+    ENV_WSL_EXE, ENV_WSL_KIND, WINDOWS_EXE_NAME,
 };
 
 const PROC_VERSION: &str = "/proc/version";
@@ -58,7 +58,7 @@ pub fn maybe_proxy() -> Option<u8> {
     if env.contains_key(ENV_LAUNCHED) {
         return None;
     }
-    wsl_core::detect(&proc_version(), &env)?;
+    let kind = wsl_core::detect(&proc_version(), &env)?;
 
     let args: Vec<String> = std::env::args_os()
         .skip(1)
@@ -75,9 +75,9 @@ pub fn maybe_proxy() -> Option<u8> {
     }
     let wargs = wsl_core::build_windows_args(&args, &env, &to_windows_path);
     if let Some(action) = wsl_core::parse_ssh_action(&wargs) {
-        return Some(run_ssh_action(&exe, &action, &env));
+        return Some(run_ssh_action(&exe, &action, &env, kind));
     }
-    let err = command(&exe, &env).args(&wargs).exec();
+    let err = command(&exe, &env, kind).args(&wargs).exec();
     Some(report_exec_error(&exe, &err, json))
 }
 
@@ -131,9 +131,11 @@ fn sorted_subdirs(dir: &Path) -> Vec<PathBuf> {
 }
 
 /// A `Command` for `wcm.exe` with the shim environment applied.
-fn command(exe: &Path, env: &Env) -> Command {
+fn command(exe: &Path, env: &Env, kind: WslKind) -> Command {
     let mut c = Command::new(exe);
     c.env(ENV_LAUNCHED, "1");
+    c.env(ENV_WSL_KIND, kind.to_string());
+    c.env(ENV_WSL_EXE, exe.as_os_str());
     c.env(
         "WSLENV",
         wsl_core::extend_wslenv(env.get("WSLENV").map(String::as_str)),
@@ -239,8 +241,8 @@ fn interop_status() -> Option<bool> {
 // ---------------------------------------------------------- ssh add / remove
 
 /// Spawns wcm.exe to obtain the key material and pipes it into the Linux `ssh-add`.
-fn run_ssh_action(exe: &Path, action: &SshAction, env: &Env) -> u8 {
-    let out = match command(exe, env)
+fn run_ssh_action(exe: &Path, action: &SshAction, env: &Env, kind: WslKind) -> u8 {
+    let out = match command(exe, env, kind)
         .args(action.exe_args())
         .stdin(Stdio::inherit())
         .stdout(Stdio::piped())
