@@ -32,7 +32,7 @@ pub const ENV_WSL_INTEROP: &str = "WSL_INTEROP";
 pub const WINDOWS_EXE_NAME: &str = "wcm.exe";
 /// WSLENV entries the shim appends so wcm.exe sees them.
 pub const WSLENV_EXTRA: &str = "WCM_LAUNCHED_FROM_WSL/w:WCM_WSL_KIND/w:WCM_WSL_EXE/w:\
-                                WCM_PASSPHRASE/w:WCM_EXPORT_PASSPHRASE/w";
+                                WCM_PASSPHRASE/w:WCM_EXPORT_PASSPHRASE/w:WCM_NO_AGENT/w";
 /// `errno` value of `Exec format error` (identical on every Linux architecture).
 pub const ENOEXEC: i32 = 8;
 
@@ -407,7 +407,7 @@ pub fn parse_ssh_action(args: &[String]) -> Option<SshAction> {
                 quiet = true;
                 globals.push("-q".to_string());
             }
-            "--no-input" if inline.is_none() => globals.push(a.to_string()),
+            "--no-input" | "--no-agent" if inline.is_none() => globals.push(a.to_string()),
             "--vault" | "--slot" => {
                 let v = take_value()?;
                 globals.push(opt.to_string());
@@ -787,6 +787,14 @@ mod tests {
     }
 
     #[test]
+    fn wslenv_extra_carries_no_agent() {
+        assert!(
+            WSLENV_EXTRA.split(':').any(|x| x == "WCM_NO_AGENT/w"),
+            "WCM_NO_AGENT/w missing from WSLENV_EXTRA"
+        );
+    }
+
+    #[test]
     fn shim_wsl_context_reads_proxied_env() {
         // Plain (non-proxied) run: no context.
         assert!(shim_wsl_context(&env(&[])).is_none());
@@ -867,6 +875,13 @@ mod tests {
             parse_ssh_action(&a).expect("add").lifetime.as_deref(),
             Some("30m")
         );
+    }
+
+    #[test]
+    fn ssh_action_forwards_no_agent() {
+        let a = args(&["--no-agent", "ssh", "add", "k"]);
+        let act = parse_ssh_action(&a).expect("add");
+        assert_eq!(act.globals, args(&["--no-agent"]));
     }
 
     #[test]

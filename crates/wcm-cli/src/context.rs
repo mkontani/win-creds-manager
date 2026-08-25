@@ -31,6 +31,16 @@ pub enum AgentUse {
 /// Environment variable disabling the agent (`1`, `true`, `yes`, `on`).
 pub const NO_AGENT_ENV: &str = "WCM_NO_AGENT";
 
+/// Outcome of asking the agent for the key.
+enum AgentPath {
+    /// Cache hit and the vault opened.
+    Unlocked(UnlockedVault),
+    /// Nothing cached (or a stale key that was just dropped): unlock normally.
+    Miss,
+    /// The agent could not be used: unlock normally after a notice.
+    Unavailable(Error),
+}
+
 /// Everything a command needs.
 pub struct Ctx {
     /// The vault file.
@@ -128,10 +138,10 @@ impl Ctx {
         let vault_id = header.vault_id_arr();
         let agent = self.agent_client();
         if let Some(agent) = &agent {
-            match self.unlock_via_agent(agent, &vault_id) {
-                Ok(Some(v)) => return Ok(v),
-                Ok(None) => {}
-                Err(e) => self
+            match self.unlock_via_agent(agent, &vault_id)? {
+                AgentPath::Unlocked(v) => return Ok(v),
+                AgentPath::Miss => {}
+                AgentPath::Unavailable(e) => self
                     .out
                     .notice(&format!("agent unavailable ({e}); unlocking without it")),
             }
@@ -143,21 +153,22 @@ impl Ctx {
         Ok(v)
     }
 
-    /// `Ok(Some)` on a cache hit; `Ok(None)` on a miss (a stale key that no
-    /// longer opens the vault is dropped from the agent first).
-    fn unlock_via_agent(
-        &self,
-        agent: &Client,
-        vault_id: &[u8; 16],
-    ) -> Result<Option<UnlockedVault>> {
-        let Some(dek) = agent.get(vault_id)? else {
-            return Ok(None);
+    /// Asks the agent for the cached key and, on a hit, opens the vault with it.
+    ///
+    /// The outer `Err` is reserved for vault errors that must propagate (e.g. a
+    /// corrupt body) — a correct cached key that fails to open the vault for any
+    /// reason other than a stale key is not the agent's fault.
+    fn unlock_via_agent(&self, agent: &Client, vault_id: &[u8; 16]) -> Result<AgentPath> {
+        let dek = match agent.get(vault_id) {
+            Ok(Some(dek)) => dek,
+            Ok(None) => return Ok(AgentPath::Miss),
+            Err(e) => return Ok(AgentPath::Unavailable(e)),
         };
         match self.vault.open_with_dek(dek) {
-            Ok(v) => Ok(Some(v)),
+            Ok(v) => Ok(AgentPath::Unlocked(v)),
             Err(Error::Integrity(_)) => {
                 let _ = agent.lock(vault_id);
-                Ok(None)
+                Ok(AgentPath::Miss)
             }
             Err(e) => Err(e),
         }
