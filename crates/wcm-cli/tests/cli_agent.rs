@@ -197,3 +197,158 @@ fn foreground_agent_serves_status_until_killed() {
     cmd(&v).args(["agent", "stop"]).assert().success();
     assert_eq!(agent_status(&v)["running"], false);
 }
+
+/// Initialized vault with one password item `x` = `s3cret`.
+fn vault_with_item() -> TestVault {
+    let (v, _key) = TestVault::initialized();
+    cmd(&v)
+        .args(["add", "x", "--stdin"])
+        .write_stdin("s3cret")
+        .assert()
+        .success();
+    v
+}
+
+/// `wcm get x` without `WCM_PASSPHRASE`: only succeeds through the agent.
+fn get_without_passphrase(v: &TestVault) -> Command {
+    let mut c = cmd(v);
+    c.env_remove("WCM_PASSPHRASE");
+    c.args(["get", "x"]);
+    c
+}
+
+#[test]
+fn cached_key_serves_later_commands_without_the_passphrase() {
+    let v = vault_with_item();
+    get_without_passphrase(&v).assert().code(7);
+
+    let _agent = start_agent(&v, &["--idle", "5m"]);
+    cmd(&v)
+        .args(["get", "x"])
+        .assert()
+        .success()
+        .stdout("s3cret\n");
+    get_without_passphrase(&v)
+        .assert()
+        .success()
+        .stdout("s3cret\n");
+
+    let s = agent_status(&v);
+    let entries = s["entries"].as_array().expect("entries");
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0]["uses"], 1);
+    assert_eq!(
+        entries[0]["path"],
+        v.path().display().to_string(),
+        "path is informational"
+    );
+
+    // Bypass: flag and environment variable.
+    get_without_passphrase(&v)
+        .arg("--no-agent")
+        .assert()
+        .code(7);
+    get_without_passphrase(&v)
+        .env("WCM_NO_AGENT", "1")
+        .assert()
+        .code(7);
+    get_without_passphrase(&v)
+        .env("WCM_NO_AGENT", "0")
+        .assert()
+        .success();
+
+    cmd(&v).args(["agent", "lock"]).assert().success();
+    get_without_passphrase(&v).assert().code(7);
+}
+
+#[test]
+fn no_agent_never_caches() {
+    let v = vault_with_item();
+    let _agent = start_agent(&v, &[]);
+    cmd(&v).args(["--no-agent", "get", "x"]).assert().success();
+    assert!(agent_status(&v)["entries"]
+        .as_array()
+        .expect("entries")
+        .is_empty());
+    get_without_passphrase(&v).assert().code(7);
+}
+
+#[test]
+fn rekey_refreshes_the_cached_key() {
+    let v = vault_with_item();
+    let _agent = start_agent(&v, &[]);
+    cmd(&v).args(["get", "x"]).assert().success();
+    cmd(&v)
+        .args(["rekey", "--argon2-test-params"])
+        .assert()
+        .success();
+    get_without_passphrase(&v)
+        .assert()
+        .success()
+        .stdout("s3cret\n");
+}
+
+#[test]
+fn stale_cached_key_heals_after_an_external_rekey() {
+    let v = vault_with_item();
+    let _agent = start_agent(&v, &[]);
+    cmd(&v).args(["get", "x"]).assert().success();
+    // Rotate the key behind the agent's back: the cache now holds a stale DEK.
+    cmd(&v)
+        .args(["--no-agent", "rekey", "--argon2-test-params"])
+        .assert()
+        .success();
+    get_without_passphrase(&v).assert().code(7);
+    // A normal unlock notices the stale key, falls back and re-caches.
+    cmd(&v)
+        .args(["get", "x"])
+        .assert()
+        .success()
+        .stdout("s3cret\n");
+    get_without_passphrase(&v)
+        .assert()
+        .success()
+        .stdout("s3cret\n");
+}
+
+#[test]
+fn stale_state_file_falls_back_to_a_normal_unlock() {
+    let v = vault_with_item();
+    let dead = if cfg!(windows) {
+        format!(r"{}-dead", endpoint_for(&v))
+    } else {
+        v.dir.path().join("dead.sock").display().to_string()
+    };
+    let state = v.dir.path().join("agent.json");
+    std::fs::write(
+        &state,
+        format!(
+            r#"{{"endpoint":{},"pid":1,"started":"2026-08-25T00:00:00Z","version":"0.2.0"}}"#,
+            serde_json::to_string(&dead).expect("json string")
+        ),
+    )
+    .expect("write state");
+    // No WCM_AGENT_ENDPOINT here: discovery must go through agent.json.
+    let mut c = v.cmd();
+    c.env("WCM_DATA_DIR", v.dir.path());
+    c.args(["get", "x"]).assert().success().stdout("s3cret\n");
+    assert!(!state.exists(), "stale agent.json removed");
+}
+
+#[test]
+fn foreground_agent_with_max_uses_evicts_after_the_last_use() {
+    let v = vault_with_item();
+    let child = std_cmd(&v)
+        .args(["agent", "start", "--foreground", "--max-uses", "1"])
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("spawn foreground agent");
+    let _guard = Foreground(child);
+    wait_until_running(&v);
+    cmd(&v).args(["get", "x"]).assert().success();
+    get_without_passphrase(&v).assert().success();
+    get_without_passphrase(&v).assert().code(7);
+    cmd(&v).args(["agent", "stop"]).assert().success();
+}

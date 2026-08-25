@@ -25,6 +25,10 @@ pub struct Cli {
     #[arg(long, global = true)]
     pub no_input: bool,
 
+    /// Do not use a running `wcm agent` for this invocation (no cache read or write; also `WCM_NO_AGENT=1`).
+    #[arg(long, global = true)]
+    pub no_agent: bool,
+
     /// Suppress informational messages on stderr.
     #[arg(short, long, global = true)]
     pub quiet: bool,

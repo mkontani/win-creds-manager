@@ -2,12 +2,13 @@
 
 use std::path::PathBuf;
 
+use wcm_agent::Client;
 use wcm_core::crypto::kdf::Argon2Params;
 use wcm_core::slot::passphrase::PassphraseBackend;
 use wcm_core::slot::{
     Envelope, IdentityEnvelope, KeySlot, KeySlotBackend, SlotKind, UnlockContext,
 };
-use wcm_core::vault::{SlotResolver, UnlockedVault, Vault};
+use wcm_core::vault::{Header, SlotResolver, UnlockedVault, Vault};
 use wcm_core::{Error, Result};
 use wcm_hello::{DpapiEnvelope, HelloOptions};
 
@@ -17,6 +18,18 @@ use crate::prompt::{passphrase_from_env, CliPrompter, PASSPHRASE_ENV};
 
 /// Environment variable overriding the default data directory (tests).
 pub const DATA_DIR_ENV: &str = "WCM_DATA_DIR";
+
+/// Whether this invocation may use the session cache agent.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum AgentUse {
+    /// `--no-agent` / `WCM_NO_AGENT`: never talk to the agent.
+    Disabled,
+    /// Use the agent if one is running.
+    Auto,
+}
+
+/// Environment variable disabling the agent (`1`, `true`, `yes`, `on`).
+pub const NO_AGENT_ENV: &str = "WCM_NO_AGENT";
 
 /// Everything a command needs.
 pub struct Ctx {
@@ -30,6 +43,8 @@ pub struct Ctx {
     pub preferred_slot: Option<String>,
     /// `--no-input`
     pub no_input: bool,
+    /// `--no-agent`
+    pub agent: AgentUse,
 }
 
 impl Ctx {
@@ -55,6 +70,7 @@ impl Ctx {
             },
             preferred_slot: cli.slot.clone(),
             no_input: cli.no_input,
+            agent: agent_use(cli),
         })
     }
 
@@ -97,9 +113,66 @@ impl Ctx {
         }
     }
 
-    /// Unlocks the vault (one Hello prompt or passphrase prompt).
+    /// The running agent, if any and if enabled for this invocation.
+    fn agent_client(&self) -> Option<Client> {
+        if self.agent == AgentUse::Disabled {
+            return None;
+        }
+        Client::discover(&default_data_dir().ok()?)
+    }
+
+    /// Unlocks the vault: from the agent's cache when possible, else with one
+    /// Hello / passphrase prompt (and the key is handed to the agent).
     pub fn unlock(&self, reason: &str) -> Result<UnlockedVault> {
         let header = self.vault.read_header()?;
+        let vault_id = header.vault_id_arr();
+        let agent = self.agent_client();
+        if let Some(agent) = &agent {
+            match self.unlock_via_agent(agent, &vault_id) {
+                Ok(Some(v)) => return Ok(v),
+                Ok(None) => {}
+                Err(e) => self
+                    .out
+                    .notice(&format!("agent unavailable ({e}); unlocking without it")),
+            }
+        }
+        let v = self.unlock_with_slots(&header, reason)?;
+        if let Some(agent) = &agent {
+            self.cache_key(agent, &vault_id, v.dek());
+        }
+        Ok(v)
+    }
+
+    /// `Ok(Some)` on a cache hit; `Ok(None)` on a miss (a stale key that no
+    /// longer opens the vault is dropped from the agent first).
+    fn unlock_via_agent(
+        &self,
+        agent: &Client,
+        vault_id: &[u8; 16],
+    ) -> Result<Option<UnlockedVault>> {
+        let Some(dek) = agent.get(vault_id)? else {
+            return Ok(None);
+        };
+        match self.vault.open_with_dek(dek) {
+            Ok(v) => Ok(Some(v)),
+            Err(Error::Integrity(_)) => {
+                let _ = agent.lock(vault_id);
+                Ok(None)
+            }
+            Err(e) => Err(e),
+        }
+    }
+
+    /// Best effort: a failure only costs the next prompt.
+    fn cache_key(&self, agent: &Client, vault_id: &[u8; 16], dek: &wcm_core::slot::Dek) {
+        if let Err(e) = agent.put(vault_id, &self.vault.path.display().to_string(), dek) {
+            self.out
+                .notice(&format!("agent: could not cache the vault key ({e})"));
+        }
+    }
+
+    /// Unlocks with the key slots (one Hello prompt or passphrase prompt).
+    fn unlock_with_slots(&self, header: &Header, reason: &str) -> Result<UnlockedVault> {
         let ctx = self.unlock_ctx(header.vault_id_arr(), reason);
         let mut resolver = self.resolver();
         // `WCM_PASSPHRASE` must work even with --no-input (allow_ui=false skips the prompter).
@@ -138,6 +211,11 @@ impl Ctx {
     /// material the user just revoked, so those commands drop it.
     pub fn save_dropping_backup(&self, v: &mut UnlockedVault) -> Result<()> {
         self.save(v)?;
+        // The key just changed (rekey) or was proven again (recover / slot rm):
+        // refresh the agent's copy so the next command does not prompt.
+        if let Some(agent) = self.agent_client() {
+            self.cache_key(&agent, &v.header.vault_id_arr(), v.dek());
+        }
         let bak = wcm_core::vault::file::backup_path(&self.vault.path);
         match std::fs::remove_file(&bak) {
             Ok(()) => {}
@@ -213,9 +291,33 @@ pub fn default_vault_path() -> Result<PathBuf> {
     Ok(default_data_dir()?.join("vault.wcm"))
 }
 
+/// `--no-agent` or a truthy `WCM_NO_AGENT` disables the agent.
+fn agent_use(cli: &Cli) -> AgentUse {
+    let env_disabled = std::env::var(NO_AGENT_ENV)
+        .map(|v| crate::wsl_core::is_truthy(&v))
+        .unwrap_or(false);
+    if cli.no_agent || env_disabled {
+        AgentUse::Disabled
+    } else {
+        AgentUse::Auto
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use clap::Parser;
+
+    #[test]
+    fn agent_use_honors_flag_and_env() {
+        let cli = Cli::parse_from(["wcm", "--no-agent", "status"]);
+        assert_eq!(agent_use(&cli), AgentUse::Disabled);
+        let cli = Cli::parse_from(["wcm", "status"]);
+        // Only meaningful when the variable is not set in the test environment.
+        if std::env::var_os(NO_AGENT_ENV).is_none() {
+            assert_eq!(agent_use(&cli), AgentUse::Auto);
+        }
+    }
 
     #[test]
     fn default_path_honors_env() {
