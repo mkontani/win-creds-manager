@@ -22,6 +22,7 @@ struct DoctorReport {
     hello_selftest: Option<SelfTest>,
     wsl: WslReport,
     ssh_add: Option<String>,
+    agent: crate::commands::agent::AgentStatusReport,
     passphrase_env_set: bool,
     problems: Vec<String>,
 }
@@ -76,6 +77,7 @@ pub fn run(ctx: &Ctx, args: &DoctorArgs) -> Result<()> {
     if ssh_add.is_none() {
         problems.push("ssh-add not found on PATH (`wcm ssh add` will not work)".into());
     }
+    let agent = crate::commands::agent::agent_status();
     let passphrase_env_set = std::env::var_os(crate::prompt::PASSPHRASE_ENV).is_some();
     if passphrase_env_set {
         problems.push(format!(
@@ -108,6 +110,7 @@ pub fn run(ctx: &Ctx, args: &DoctorArgs) -> Result<()> {
         hello_selftest,
         wsl,
         ssh_add,
+        agent,
         passphrase_env_set,
         problems,
     };
@@ -182,6 +185,22 @@ pub fn run(ctx: &Ctx, args: &DoctorArgs) -> Result<()> {
     ctx.out.line(&format!(
         "ssh-add:       {}",
         report.ssh_add.as_deref().unwrap_or("not found")
+    ))?;
+    ctx.out.line(&format!(
+        "agent:         {}",
+        if report.agent.running {
+            format!(
+                "running (pid {}, {})",
+                report
+                    .agent
+                    .pid
+                    .map(|p| p.to_string())
+                    .unwrap_or_else(|| "?".into()),
+                report.agent.endpoint.as_deref().unwrap_or("?")
+            )
+        } else {
+            "not running".into()
+        }
     ))?;
     if report.problems.is_empty() {
         ctx.out.line("problems:      none")?;

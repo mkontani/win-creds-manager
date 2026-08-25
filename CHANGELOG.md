@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 The vault file format has its own major version (magic `WCM\x01`), documented
 in [docs/FORMAT.md](docs/FORMAT.md); format changes are called out explicitly.
 
+## [0.2.0] - 2026-08-25
+
+### Added
+
+- `wcm agent` — an opt-in, explicitly started session cache. `wcm agent start
+  [--idle 10m] [--ttl 1h] [--max-uses N]` keeps each vault's data key in memory
+  (in a detached per-user process reachable over a named pipe / Unix socket)
+  so a burst of commands needs a single Windows Hello prompt; `lock`, `stop`
+  and `status` manage it. Commands use a running agent automatically and fall
+  back to the normal prompt when it is absent, locked or holds a stale key
+  (e.g. after `wcm rekey` in another terminal). `--no-agent` / `WCM_NO_AGENT=1`
+  bypass it per invocation. `wcm status` and `wcm doctor` report the agent.
+  Works from WSL (the agent runs on the Windows side). See docs/AGENT.md and the
+  new threat-model entries in docs/SECURITY.md.
+- New crate `wcm-agent` (protocol, cache, server, client; `forbid(unsafe_code)`)
+  built on `interprocess`. The Windows pipe carries an owner-only DACL
+  (`D:P(A;;GA;;;<SID>)`); the Unix socket lives in a `0700` directory.
+
+### Changed
+
+- `wcm --exit-codes` describes exit 11 (`HELPER`) as
+  "clipboard / ssh-add / agent helper failure".
+
 ## [0.1.2] - 2026-08-24
 
 ### Fixed

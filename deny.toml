@@ -46,6 +46,8 @@ allow = [
     "MPL-2.0",
     "BSL-1.0",
     "Unlicense",
+    # doctest-file (all targets) and recvmsg (Windows), both pulled in by interprocess.
+    "0BSD",
 ]
 # Crates whose license metadata cargo-deny cannot infer from the manifest.
 exceptions = []

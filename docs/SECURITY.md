@@ -17,6 +17,8 @@ trusting the tool with anything important. The on-disk details are in
     against the public key stored in the header, then fed to HKDF-SHA256 to
     derive the key-encryption key (KEK). Every unlock shows the Windows Hello
     prompt (PIN, face or fingerprint) — by design, once per `wcm` invocation.
+    The optional [session cache](#session-cache) (`wcm agent`) relaxes this to
+    once per cache lifetime.
   * **Recovery slot (mandatory)** — a 144-bit random recovery key
     (`WCM1-XXXX-…`) run through Argon2id (64 MiB, t=3) then HKDF. Shown once at
     `wcm init`. This is the only way back in after a PIN reset, TPM clear,
@@ -40,7 +42,7 @@ trusting the tool with anything important. The on-disk details are in
 | Threat | How |
 |---|---|
 | **Copy of the vault file** — backups, cloud sync, another user on the machine, a stolen disk, a different PC | The body is AEAD-encrypted under a random DEK. Without a Hello signature from *this* machine's TPM key or the recovery key/passphrase the file is opaque; item names are encrypted too. |
-| **Same-user malware while you are away** (no interactive approval) | The Hello key never leaves the TPM/credential store and every signature requires a Windows Hello gesture. A process cannot silently sign the challenge, so it cannot derive the KEK. There is no daemon, session cache or environment-variable unlock in v1 that could be harvested. |
+| **Same-user malware while you are away** (no interactive approval) | The Hello key never leaves the TPM/credential store and every signature requires a Windows Hello gesture. A process cannot silently sign the challenge, so it cannot derive the KEK. By default there is no daemon, session cache or environment-variable unlock that could be harvested; the opt-in `wcm agent` changes this — see [Session cache](#session-cache). |
 | **Header / slot tampering** — swapping the stored public key, challenge, Argon2 parameters, slot ids, cipher id | The header is the body's AAD; slots carry their own AAD (`vault_id ‖ id ‖ kind`). Any change fails closed with exit 8 (`INTEGRITY`). |
 | **Silent change of the signature scheme** (e.g. a future Windows build returning RSA-PSS, which is randomized) | The signature is verified against the stored SPKI with PKCS#1 v1.5 *before* it touches the KDF. Anything else is rejected; a wrong KEK is never derived and never used to overwrite the vault. |
 | **Weak or reused passphrase material** | Argon2id 64 MiB/3 passes per slot, 32-byte random salt per slot, HKDF domain separation per slot kind and vault id. The recovery key is 144 random bits. |
@@ -57,6 +59,7 @@ trusting the tool with anything important. The on-disk details are in
 | **Malware that tricks you into approving a Hello prompt** (the *confused deputy*). Any process running as your user can call `KeyCredentialManager` with your vault's credential name and trigger the *same* Windows Hello dialog. If you type your PIN into a prompt you did not initiate, that process obtains a valid signature → KEK → DEK. | Microsoft documents this limitation of `KeyCredentialManager` (the prompt shows the app's *display name*, not a verified identity). wcm prints a notice on stderr *before* each prompt (`Windows Hello: waiting for your PIN/biometric…`) so an unexpected dialog is recognisable. Only approve prompts that appear right after you ran a `wcm` command. |
 | **Administrator / SYSTEM / kernel-level attackers** on the same machine | They can inject into your process, read memory after unlock, or subvert the credential store. No user-mode password manager defends against this. |
 | **A running, already-unlocked `wcm` process** (memory scraping) | Keys live in memory for the duration of one command and are zeroized on drop; a debugger attached during that window wins. |
+| **Same-user processes while `wcm agent` holds a key** | Opt-in. Any process running as your user can fetch the cached DEK until it expires (`--idle`/`--ttl`/`--max-uses`) or you run `wcm agent lock`/`stop`; a stolen DEK opens the vault file until `wcm rekey`. Other users cannot reach the agent (owner-only pipe DACL / `0700` socket directory, endpoint published only in the profile-protected `agent.json`). |
 | **Software-backed Hello keys** (VMs without a vTPM, some older hardware) | The key is then protected by Windows only, not by a TPM. `wcm init` warns `not hardware (TPM) backed` and records `hw_backed=false` in the slot; check with `wcm status`. |
 | **Theft of the recovery key** | Anyone with the recovery key (or passphrase) can open the vault *without* Hello, on any machine. Treat it like the master password of a password manager. |
 | **Clipboard managers / history tools** | `--clip` uses `exclude_from_monitoring` hints and clears after `WCM_CLIP_TIME` seconds, but third-party clipboard history may still capture the value. |
@@ -85,10 +88,14 @@ trusting the tool with anything important. The on-disk details are in
   (tied to your Windows password/profile) the Hello slot's wrapped DEK is still
   opaque. It costs nothing on the normal path and cannot lock you out because
   the recovery slot is not DPAPI-wrapped.
-* **Why one prompt per invocation and no agent?** Simplicity and auditability
-  in v1. Batch commands (`get a b c`, `run --env …`, `ssh add`) keep the number
-  of prompts low. A session cache (`wcm agent`) is on the roadmap and will
-  widen the window during which memory scraping matters; it will be opt-in.
+* **Why one prompt per invocation by default, and an opt-in agent?** Simplicity
+  and auditability. Batch commands (`get a b c`, `run --env …`, `ssh add`) keep
+  the number of prompts low without any daemon. `wcm agent` exists for people
+  who run many commands in a row; it caches the *DEK* (not a Hello signature)
+  in a separate process, hands it only to same-user clients, never writes it to
+  disk, and forgets it on a short timer. It widens the window during which
+  memory scraping and same-user malware matter, which is why it is never
+  started implicitly.
 * **Why encrypt item names?** Names leak intent ("bank/…", "prod-db/…").
   Listing therefore requires an unlock; this is a conscious usability trade-off.
 * **Why a thin WSL shim?** All crypto and UI happens in `wcm.exe`; the Linux
@@ -114,6 +121,22 @@ trusting the tool with anything important. The on-disk details are in
   (fresh DEK, all slots re-sealed) and `wcm slot rm`/`slot add` to replace it.
 * Use `wcm doctor` to confirm `hw_backed=true`, an interactive session, and
   that `WCM_PASSPHRASE` is not set.
+* Treat `wcm agent` like an unlocked password manager: start it with a short
+  `--idle`, `wcm agent lock` before leaving the desk, and `wcm rekey` if you
+  suspect a same-user process read the key while it was cached.
+
+### Session cache
+
+`wcm agent` (see [AGENT.md](AGENT.md)) is a per-user process that keeps DEKs
+in `Zeroizing` memory, one entry per vault id, and hands them to `wcm`
+commands over a local socket (named pipe on Windows with the DACL
+`D:P(A;;GA;;;<your SID>)`, a Unix socket in a `0700` directory elsewhere).
+Clients find it through `agent.json` in the user's data directory, which is
+protected by the profile ACL and contains no secrets. Keys expire on an idle
+timer, an absolute timer or a use count, whichever comes first; `lock` and
+`stop` wipe immediately. Protocol frames are size-limited and versioned, and a
+client abandons a request after two seconds so a wedged agent never blocks a
+command — it simply prompts as usual.
 
 ### The `.bak` file
 

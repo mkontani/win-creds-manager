@@ -3,7 +3,7 @@ resolver = "2"
 members = ["crates/*"]
 
 [workspace.package]
-version = "0.1.2"
+version = "0.2.0"
 edition = "2021"
 rust-version = "1.89"
 license = "MIT"
@@ -11,8 +11,9 @@ repository = "https://github.com/mkontani/win-creds-manager"
 authors = ["mkontani"]
 
 [workspace.dependencies]
-wcm-core = { path = "crates/wcm-core", version = "0.1.2" }
-wcm-hello = { path = "crates/wcm-hello", version = "0.1.2" }
+wcm-core = { path = "crates/wcm-core", version = "0.2.0" }
+wcm-hello = { path = "crates/wcm-hello", version = "0.2.0" }
+wcm-agent = { path = "crates/wcm-agent", version = "0.2.0" }
 
 # CLI / general
 clap = { version = "4.5", features = ["derive", "env", "wrap_help"] }
@@ -42,6 +43,9 @@ rpassword = "7.3"
 ssh-key = { version = "0.6", features = ["ed25519", "rsa", "p256", "p384", "encryption", "std"] }
 arboard = { version = "3.4", default-features = false }
 time = { version = "0.3", features = ["formatting", "parsing"] }
+# IPC (agent): named pipes on Windows, Unix domain sockets elsewhere
+interprocess = "2.4"
+widestring = "1.2"
 # Windows
 windows = "=0.62.2"
 # tests

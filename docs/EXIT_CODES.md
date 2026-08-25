@@ -22,7 +22,7 @@ conventional "cannot execute" / "not found" meaning in POSIX shells.
 | 8    | `INTEGRITY`        | vault integrity or decryption failure                 | Wrong passphrase / recovery key, tampered or truncated vault file, bad magic, unexpected Hello signature. Previous generation is in `vault.wcm.bak`. |
 | 9    | `LOCKED`           | vault locked or concurrently modified                 | Another `wcm` process wrote the vault between your unlock and save. Retry. |
 | 10   | `IO`               | file system error                                     | Permission denied, disk full, unreadable path. |
-| 11   | `HELPER`           | clipboard / ssh-add helper failure                    | `ssh-add` missing or failed, clipboard unavailable (headless CI), `wcm unclip` spawn failed. |
+| 11   | `HELPER`           | clipboard / ssh-add / agent helper failure            | `ssh-add` missing or failed, clipboard unavailable (headless CI), `wcm unclip` spawn failed, `wcm agent start` could not bind or the agent did not answer. |
 | 12   | `FORMAT`           | import/export format error                            | Unreadable export file, unsupported export version. |
 | 126  | `WSL_INTEROP_BROKEN` | WSL interop cannot launch Windows executables       | `Exec format error` from WSL; check `/proc/sys/fs/binfmt_misc/WSLInterop` or `[interop] enabled=true` in `/etc/wsl.conf`. |
 | 127  | `WSL_EXE_NOT_FOUND`  | `wcm.exe` not found from WSL                        | Set `WCM_WINDOWS_EXE` or put `wcm.exe` on the Windows `PATH`. See [WSL.md](WSL.md). |

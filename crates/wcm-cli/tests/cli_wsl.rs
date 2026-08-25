@@ -242,7 +242,7 @@ fn args_env_and_exit_code_are_forwarded() {
     assert!(
         rec.contains(
             "WSLENV:FOO/p:WCM_LAUNCHED_FROM_WSL/w:WCM_WSL_KIND/w:WCM_WSL_EXE/w:\
-             WCM_PASSPHRASE/w:WCM_EXPORT_PASSPHRASE/w\n"
+             WCM_PASSPHRASE/w:WCM_EXPORT_PASSPHRASE/w:WCM_NO_AGENT/w\n"
         ),
         "{rec}"
     );
