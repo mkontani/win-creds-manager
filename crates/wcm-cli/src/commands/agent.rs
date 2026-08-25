@@ -291,6 +291,47 @@ pub fn agent_status() -> AgentStatusReport {
     }
 }
 
+/// The agent as it concerns one vault (for `wcm status`).
+#[derive(Serialize)]
+pub struct AgentSummary {
+    pub running: bool,
+    pub cached: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub expires_in_secs: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub uses: Option<u32>,
+}
+
+pub fn agent_summary(vault_id_hex: &str) -> AgentSummary {
+    let report = agent_status();
+    let entry = report
+        .entries
+        .iter()
+        .find(|e| e.vault_id_hex == vault_id_hex);
+    AgentSummary {
+        running: report.running,
+        cached: entry.is_some(),
+        expires_in_secs: entry.map(|e| e.expires_in_secs),
+        uses: entry.map(|e| e.uses),
+    }
+}
+
+impl AgentSummary {
+    /// One-line human form.
+    pub fn describe(&self) -> String {
+        if !self.running {
+            return "not running".into();
+        }
+        match (self.expires_in_secs, self.uses) {
+            (Some(secs), Some(uses)) => format!(
+                "running, cached for this vault (expires in {}, {uses} uses)",
+                format_duration(Duration::from_secs(secs))
+            ),
+            _ => "running, not cached for this vault".into(),
+        }
+    }
+}
+
 fn status(ctx: &Ctx) -> Result<()> {
     let report = agent_status();
     if ctx.out.json {

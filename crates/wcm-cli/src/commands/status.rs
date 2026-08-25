@@ -29,6 +29,7 @@ struct StatusReport {
     generation: u64,
     size_bytes: u64,
     slots: Vec<SlotRow>,
+    agent: crate::commands::agent::AgentSummary,
     backup_exists: bool,
 }
 
@@ -37,6 +38,7 @@ pub fn run(ctx: &Ctx, _args: &StatusArgs) -> Result<()> {
     let size = std::fs::metadata(&ctx.vault.path)
         .map(|m| m.len())
         .unwrap_or(0);
+    let agent = crate::commands::agent::agent_summary(&header.vault_id_hex());
     let report = StatusReport {
         vault: ctx.vault.path.display().to_string(),
         exists: true,
@@ -67,6 +69,7 @@ pub fn run(ctx: &Ctx, _args: &StatusArgs) -> Result<()> {
                 }
             })
             .collect(),
+        agent,
         backup_exists: wcm_core::vault::file::backup_path(&ctx.vault.path).exists(),
     };
     if ctx.out.json {
@@ -88,5 +91,7 @@ pub fn run(ctx: &Ctx, _args: &StatusArgs) -> Result<()> {
         ctx.out
             .line(&format!("  [{}] {:<12} {}{}", s.id, s.label, s.kind, extra))?;
     }
+    ctx.out
+        .line(&format!("agent:      {}", report.agent.describe()))?;
     Ok(())
 }

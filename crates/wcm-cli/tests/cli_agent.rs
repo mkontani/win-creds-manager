@@ -352,3 +352,47 @@ fn foreground_agent_with_max_uses_evicts_after_the_last_use() {
     get_without_passphrase(&v).assert().code(7);
     cmd(&v).args(["agent", "stop"]).assert().success();
 }
+
+#[test]
+fn status_and_doctor_report_the_agent() {
+    let v = vault_with_item();
+    let before = json(&cmd(&v).args(["--json", "status"]).output().expect("status"));
+    assert_eq!(before["agent"]["running"], false);
+    assert_eq!(before["agent"]["cached"], false);
+    let doctor = json(&cmd(&v).args(["--json", "doctor"]).output().expect("doctor"));
+    assert_eq!(doctor["agent"]["running"], false);
+
+    let _agent = start_agent(&v, &["--idle", "5m"]);
+    let running = json(&cmd(&v).args(["--json", "status"]).output().expect("status"));
+    assert_eq!(running["agent"]["running"], true);
+    assert_eq!(running["agent"]["cached"], false);
+    cmd(&v)
+        .args(["status"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "agent:      running, not cached for this vault",
+        ));
+
+    cmd(&v).args(["get", "x"]).assert().success();
+    let cached = json(&cmd(&v).args(["--json", "status"]).output().expect("status"));
+    assert_eq!(cached["agent"]["cached"], true);
+    assert_eq!(cached["agent"]["uses"], 0);
+    assert!(cached["agent"]["expires_in_secs"].as_u64().expect("secs") <= 300);
+    cmd(&v)
+        .args(["status"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains(
+            "agent:      running, cached for this vault (expires in ",
+        ));
+
+    let doctor = json(&cmd(&v).args(["--json", "doctor"]).output().expect("doctor"));
+    assert_eq!(doctor["agent"]["running"], true);
+    assert!(doctor["agent"]["pid"].as_u64().expect("pid") > 0);
+    cmd(&v)
+        .args(["doctor"])
+        .assert()
+        .success()
+        .stdout(predicate::str::contains("agent:         running (pid "));
+}
