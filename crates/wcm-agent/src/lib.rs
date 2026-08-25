@@ -15,7 +15,7 @@ pub mod protocol;
 pub mod server;
 
 pub use cache::{Cache, Policy};
-pub use client::Client;
+pub use client::{Client, REQUEST_TIMEOUT};
 pub use endpoint::{AgentState, Endpoint, StateFile, ENDPOINT_ENV};
 pub use protocol::{EntryInfo, PolicyInfo, Request, Response, VaultId, WireDek, PROTOCOL_VERSION};
 pub use server::{Server, ServerOptions};
