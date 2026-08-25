@@ -235,6 +235,8 @@ fn spawn_detached(args: &AgentStartArgs) -> Result<Child> {
     // Windows inherits every inheritable handle, including the stdout/stderr
     // pipes our own caller gave us; without this the agent would keep them
     // open and the caller (WSL shim, test harness) would never see EOF.
+    // Fail closed: spawning anyway could hang that caller, which is worse
+    // than a clear error here.
     wcm_hello::process::stop_inheriting_stdio().map_err(|e| {
         Error::Helper(format!(
             "agent: cannot stop the child from inheriting this process's handles: {e}"
