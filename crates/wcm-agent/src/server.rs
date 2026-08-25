@@ -84,6 +84,12 @@ impl Server {
             match self.listener.accept() {
                 Ok(stream) => {
                     consecutive_failures = 0;
+                    // BSD/macOS accepted sockets inherit the listener's O_NONBLOCK and
+                    // interprocess does not clear it in `Accept` mode; `handle` relies on
+                    // blocking reads, so force it off here.
+                    if stream.set_nonblocking(false).is_err() {
+                        continue; // drop this connection; the client gets EOF and falls back
+                    }
                     let cache = cache.clone();
                     let stop = stop.clone();
                     thread::spawn(move || handle(stream, &cache, &stop));
