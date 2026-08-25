@@ -146,6 +146,25 @@ fn discover_uses_the_state_file_and_removes_it_when_dead() {
 }
 
 #[test]
+fn discover_removes_a_corrupt_state_file() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let state = StateFile::in_dir(dir.path());
+    state
+        .write(&AgentState {
+            endpoint: r"\\.\pipe\".into(),
+            pid: std::process::id(),
+            started: "2026-08-25T00:00:00Z".into(),
+            version: "test".into(),
+        })
+        .expect("write state");
+    assert!(
+        Client::discover(dir.path()).is_none(),
+        "endpoint field doesn't parse"
+    );
+    assert!(!state.path().exists(), "corrupt state file removed");
+}
+
+#[test]
 fn requests_to_nothing_fail_fast_with_helper_errors() {
     let dir = tempfile::tempdir().expect("tempdir");
     let client = Client::connect(endpoint_in(dir.path()));

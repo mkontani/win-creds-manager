@@ -34,16 +34,33 @@ impl Client {
         &self.endpoint
     }
 
-    /// Finds a running agent: `WCM_AGENT_ENDPOINT` if set, else the endpoint
-    /// recorded in `<data_dir>/agent.json`. `None` when nothing answers; a
-    /// state file nobody answers for (crashed agent) is removed.
+    /// Finds a running agent. Three cases:
+    /// * `WCM_AGENT_ENDPOINT` set and valid: pings that endpoint; `Some` if it
+    ///   answers, `None` otherwise. `agent.json` is never consulted or touched.
+    /// * `WCM_AGENT_ENDPOINT` set but unparseable: `None` immediately — the
+    ///   override disables discovery for this invocation rather than falling
+    ///   back to the state file (the server side reports the parse error when
+    ///   it starts). `agent.json` is never touched.
+    /// * `WCM_AGENT_ENDPOINT` unset: the endpoint recorded in
+    ///   `<data_dir>/agent.json`. `None` when there is no state file, its
+    ///   `endpoint` field doesn't parse, or nothing answers; a state file left
+    ///   behind by a dead or corrupted agent is removed in both of the latter
+    ///   cases.
     pub fn discover(data_dir: &Path) -> Option<Client> {
-        if let Ok(Some(endpoint)) = env_endpoint() {
-            let client = Client::connect(endpoint);
-            return client.ping().is_ok().then_some(client);
+        match env_endpoint() {
+            Ok(Some(endpoint)) => {
+                let client = Client::connect(endpoint);
+                return client.ping().is_ok().then_some(client);
+            }
+            Err(_) => return None,
+            Ok(None) => {}
         }
         let state = StateFile::in_dir(data_dir);
-        let endpoint: Endpoint = state.read()?.endpoint.parse().ok()?;
+        let recorded = state.read()?;
+        let Ok(endpoint) = recorded.endpoint.parse::<Endpoint>() else {
+            let _ = state.remove();
+            return None;
+        };
         let client = Client::connect(endpoint);
         if client.ping().is_ok() {
             Some(client)
@@ -125,7 +142,9 @@ impl Client {
 }
 
 fn round_trip(endpoint: &Endpoint, request: Request) -> Result<Response> {
-    let name = endpoint.to_name()?;
+    let name = endpoint
+        .to_name()
+        .map_err(|e| Error::Helper(format!("agent: {endpoint}: {e}")))?;
     let mut stream = Stream::connect(name)
         .map_err(|e| Error::Helper(format!("agent: connect {endpoint}: {e}")))?;
     protocol::write_frame(&mut stream, &request)?;
@@ -159,5 +178,19 @@ mod tests {
         assert_eq!(e.to_string(), "helper failed: agent: VERSION: old");
         assert!(matches!(expect_ok(Response::Miss), Err(Error::Helper(_))));
         assert!(expect_ok(Response::Ok).is_ok());
+    }
+
+    #[test]
+    fn an_endpoint_kind_the_platform_cannot_use_is_a_helper_error() {
+        // `to_name` rejects the other platform's endpoint kind with
+        // `Error::Invalid`; `round_trip` must map that into `Error::Helper` so
+        // every client error keeps the same exit code.
+        let endpoint = if cfg!(windows) {
+            Endpoint::Socket("/x".into())
+        } else {
+            Endpoint::Pipe("x".into())
+        };
+        let client = Client::connect(endpoint);
+        assert!(matches!(client.ping(), Err(Error::Helper(_))));
     }
 }
