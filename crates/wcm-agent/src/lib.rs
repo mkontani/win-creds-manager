@@ -7,7 +7,9 @@
 //! is a local socket (named pipe on Windows, Unix domain socket elsewhere).
 #![forbid(unsafe_code)]
 
+pub mod cache;
 pub mod duration;
 pub mod protocol;
 
+pub use cache::{Cache, Policy};
 pub use protocol::{EntryInfo, PolicyInfo, Request, Response, VaultId, WireDek, PROTOCOL_VERSION};
