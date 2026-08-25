@@ -137,18 +137,23 @@ impl Ctx {
         let header = self.vault.read_header()?;
         let vault_id = header.vault_id_arr();
         let agent = self.agent_client();
+        // Cleared as soon as the agent proves unusable: one notice and at most
+        // one timeout per command, never a `put` after a `get` already failed.
+        let mut usable = true;
         if let Some(agent) = &agent {
             match self.unlock_via_agent(agent, &vault_id)? {
                 AgentPath::Unlocked(v) => return Ok(v),
                 AgentPath::Miss => {}
-                AgentPath::Unavailable(e) => self
-                    .out
-                    .notice(&format!("agent unavailable ({e}); unlocking without it")),
+                AgentPath::Unavailable(e) => {
+                    usable = false;
+                    self.out
+                        .notice(&format!("agent unavailable ({e}); unlocking without it"));
+                }
             }
         }
         let v = self.unlock_with_slots(&header, reason)?;
-        if let Some(agent) = &agent {
-            self.cache_key(agent, &vault_id, v.dek());
+        if let Some(agent) = agent.filter(|_| usable) {
+            self.cache_key(&agent, &vault_id, v.dek());
         }
         Ok(v)
     }
@@ -223,7 +228,10 @@ impl Ctx {
     pub fn save_dropping_backup(&self, v: &mut UnlockedVault) -> Result<()> {
         self.save(v)?;
         // The key just changed (rekey) or was proven again (recover / slot rm):
-        // refresh the agent's copy so the next command does not prompt.
+        // refresh the agent's copy so the next command does not prompt. The
+        // `put` deliberately restarts the entry's idle/ttl/uses counters even
+        // when the DEK is unchanged — the user has just proven a slot again, so
+        // treating this as a fresh unlock is the intended behaviour.
         if let Some(agent) = self.agent_client() {
             self.cache_key(&agent, &v.header.vault_id_arr(), v.dek());
         }

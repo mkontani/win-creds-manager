@@ -5,14 +5,14 @@
 //! `wcm_agent` crate; this module only wires it to the CLI.
 
 use std::path::Path;
-use std::process::{Command, Stdio};
+use std::process::{Child, Command, ExitStatus, Stdio};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use serde::Serialize;
 use wcm_agent::duration::{format_duration, parse_duration};
 use wcm_agent::endpoint::{resolve_endpoint, AgentState, StateFile};
-use wcm_agent::{Cache, Client, EntryInfo, Policy, PolicyInfo, Server, ServerOptions};
+use wcm_agent::{Cache, Client, Endpoint, EntryInfo, Policy, PolicyInfo, Server, ServerOptions};
 use wcm_core::{Error, Result};
 
 use crate::cli::{AgentArgs, AgentCommand, AgentStartArgs};
@@ -78,27 +78,43 @@ fn start(ctx: &Ctx, args: &AgentStartArgs) -> Result<()> {
     if let Some(agent) = running(&data_dir) {
         return report_already_running(ctx, &agent, policy);
     }
+    // The endpoint this start would bind. On Windows it is a fresh random pipe
+    // name, so the "already taken" checks below cannot match another agent.
+    let endpoint = resolve_endpoint(&data_dir)?;
+    let state_file = StateFile::in_dir(&data_dir);
     if args.foreground {
-        return match serve(&data_dir, policy) {
+        return match serve(&data_dir, endpoint.clone(), policy) {
             // Lost a race with another `start`: behave like "already running".
-            Err(Error::AlreadyExists(_)) => match running(&data_dir) {
+            Err(e @ Error::AlreadyExists(_)) => match running(&data_dir) {
                 Some(agent) => report_already_running(ctx, &agent, policy),
-                None => Ok(()),
+                // Somebody holds the endpoint but no state file names it, so no
+                // client can discover it and no `agent stop` can reach it.
+                None if !state_file.path().exists() => {
+                    Err(orphan_endpoint(&endpoint, state_file.path()))
+                }
+                // Recorded, yet discovery could not reach it: report the bind
+                // failure rather than claim the state file is missing.
+                None => Err(e),
             },
             other => other,
         };
     }
-    let pid = spawn_detached(args)?;
+    // Same dead end, seen before spawning: the child could only fail to bind.
+    // Skipped when a state file exists — then the wording below would be wrong
+    // and the child's own exit status is the better explanation.
+    if !state_file.path().exists() && Client::connect(endpoint.clone()).ping().is_ok() {
+        return Err(orphan_endpoint(&endpoint, state_file.path()));
+    }
+    let mut child = spawn_detached(args)?;
+    let pid = child.id();
     let deadline = Instant::now() + START_TIMEOUT;
     let agent = loop {
         if let Some(agent) = running(&data_dir) {
             break agent;
         }
         if Instant::now() >= deadline {
-            return Err(Error::Helper(format!(
-                "agent (pid {pid}) did not answer within {}s",
-                START_TIMEOUT.as_secs()
-            )));
+            // A child that already died explains itself far better than a timeout.
+            return Err(start_timed_out(child.try_wait().ok().flatten(), pid));
         }
         std::thread::sleep(START_POLL);
     };
@@ -125,6 +141,34 @@ fn start(ctx: &Ctx, args: &AgentStartArgs) -> Result<()> {
     ))
 }
 
+/// An agent answers on the endpoint we would bind, but nothing records it.
+/// Discovery goes through `agent.json`, so that process is unreachable: the
+/// user has to end it (or remove the socket) before a new agent can start.
+fn orphan_endpoint(endpoint: &Endpoint, state_path: &Path) -> Error {
+    Error::Helper(format!(
+        "an agent is already listening on {endpoint} but its state file {} is missing; \
+         stop that process or remove the socket, then retry",
+        state_path.display()
+    ))
+}
+
+/// The detached child never answered within [`START_TIMEOUT`]. `exited` is its
+/// status when it is already gone (`try_wait`), which says far more than the
+/// timeout itself; `None` also covers a `try_wait` that failed.
+fn start_timed_out(exited: Option<ExitStatus>, pid: u32) -> Error {
+    match exited {
+        Some(status) => Error::Helper(format!(
+            "agent (pid {pid}) exited with {status} before answering; \
+             run `wcm agent start --foreground` to see why"
+        )),
+        None => Error::Helper(format!(
+            "agent (pid {pid}) did not answer within {}s; it may still be starting \
+             — check `wcm agent status`",
+            START_TIMEOUT.as_secs()
+        )),
+    }
+}
+
 fn report_already_running(ctx: &Ctx, agent: &Running, requested: Policy) -> Result<()> {
     if ctx.out.json {
         return ctx.out.json(&StartReport {
@@ -144,8 +188,7 @@ fn report_already_running(ctx: &Ctx, agent: &Running, requested: Policy) -> Resu
 }
 
 /// Runs the agent in this process until `wcm agent stop`.
-fn serve(data_dir: &Path, policy: Policy) -> Result<()> {
-    let endpoint = resolve_endpoint(data_dir)?;
+fn serve(data_dir: &Path, endpoint: Endpoint, policy: Policy) -> Result<()> {
     let server = Server::bind(
         endpoint,
         &ServerOptions {
@@ -161,12 +204,14 @@ fn serve(data_dir: &Path, policy: Policy) -> Result<()> {
     })?;
     let cache = Arc::new(Mutex::new(Cache::new(policy)));
     let result = server.serve(cache);
-    let _ = state_file.remove();
+    // Only our own file: `wcm agent stop` returns as soon as the reply is on the
+    // wire, so a successor may already have written its `agent.json` by now.
+    let _ = state_file.remove_if_pid(std::process::id());
     result
 }
 
 /// Starts `wcm agent start --foreground …` detached from this console/terminal.
-fn spawn_detached(args: &AgentStartArgs) -> Result<u32> {
+fn spawn_detached(args: &AgentStartArgs) -> Result<Child> {
     let exe = std::env::current_exe()
         .map_err(|e| Error::Helper(format!("agent: cannot locate the wcm executable: {e}")))?;
     let mut cmd = Command::new(exe);
@@ -187,10 +232,8 @@ fn spawn_detached(args: &AgentStartArgs) -> Result<u32> {
         .stderr(Stdio::null());
     crate::prompt::scrub_secret_env(&mut cmd);
     detach(&mut cmd);
-    let child = cmd
-        .spawn()
-        .map_err(|e| Error::Helper(format!("agent: spawn: {e}")))?;
-    Ok(child.id())
+    cmd.spawn()
+        .map_err(|e| Error::Helper(format!("agent: spawn: {e}")))
 }
 
 #[cfg(windows)]
@@ -388,6 +431,42 @@ mod tests {
             max_uses,
             foreground: false,
         }
+    }
+
+    /// Both timeout messages: the one that can name a cause and the one that
+    /// cannot. `ExitStatus` can only be built from a real process, so the exited
+    /// case is checked where the platform lets us fabricate one.
+    #[test]
+    fn start_timeout_messages_name_the_pid_and_the_next_step() {
+        let waiting = start_timed_out(None, 42);
+        assert!(
+            matches!(&waiting, Error::Helper(m)
+                if m.contains("pid 42") && m.contains("may still be starting")),
+            "{waiting}"
+        );
+        #[cfg(unix)]
+        {
+            use std::os::unix::process::ExitStatusExt;
+            let exited = start_timed_out(Some(ExitStatus::from_raw(3 << 8)), 42);
+            assert!(
+                matches!(&exited, Error::Helper(m)
+                    if m.contains("pid 42") && m.contains("before answering")),
+                "{exited}"
+            );
+        }
+    }
+
+    #[test]
+    fn orphan_endpoint_names_the_endpoint_and_the_state_file() {
+        let e = orphan_endpoint(
+            &Endpoint::Socket("/run/wcm/agent.sock".into()),
+            Path::new("/data/wcm/agent.json"),
+        );
+        assert!(
+            matches!(&e, Error::Helper(m)
+                if m.contains("/run/wcm/agent.sock") && m.contains("/data/wcm/agent.json")),
+            "{e}"
+        );
     }
 
     #[test]

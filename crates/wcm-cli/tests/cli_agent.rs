@@ -179,6 +179,73 @@ fn start_stop_and_lock_are_idempotent_and_clean_up() {
         .stderr(predicate::str::contains("agent is not running"));
 }
 
+/// A `wcm` command in **default-endpoint** mode: only `WCM_DATA_DIR` is set, so
+/// the agent binds `<tempdir>/run/agent.sock` (`env_clear` drops `XDG_RUNTIME_DIR`).
+#[cfg(unix)]
+fn default_cmd(v: &TestVault) -> Command {
+    let mut c = v.cmd();
+    c.env("WCM_DATA_DIR", v.dir.path());
+    c
+}
+
+/// [`default_cmd`] as a `std` command (needed to spawn a foreground agent).
+#[cfg(unix)]
+fn default_std_cmd(v: &TestVault) -> StdCommand {
+    let mut c = StdCommand::new(env!("CARGO_BIN_EXE_wcm"));
+    c.env_clear();
+    for key in ["PATH", "LLVM_PROFILE_FILE"] {
+        if let Some(val) = std::env::var_os(key) {
+            c.env(key, val);
+        }
+    }
+    c.env("WCM_VAULT", v.path())
+        .env("WCM_PASSPHRASE", PASS)
+        .env("WCM_NO_WSL_PROXY", "1")
+        .env("HOME", v.dir.path())
+        .env("WCM_DATA_DIR", v.dir.path());
+    c
+}
+
+/// An endpoint held by a live agent with no `agent.json` to find it by is a dead
+/// end: nothing can discover or stop it, so `start` must say so instead of
+/// spawning a child that can only fail to bind.
+///
+/// Unix only: on Windows the endpoint is a fresh random pipe name per start, so
+/// the situation cannot arise without an explicit `WCM_AGENT_ENDPOINT`.
+#[cfg(unix)]
+#[test]
+fn start_refuses_when_the_endpoint_is_taken_but_the_state_file_is_gone() {
+    let v = TestVault::new();
+    let child = default_std_cmd(&v)
+        .args(["agent", "start", "--foreground"])
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .expect("spawn foreground agent");
+    let _guard = Foreground(child);
+
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        let out = default_cmd(&v)
+            .args(["--json", "agent", "status"])
+            .output()
+            .expect("agent status");
+        if json(&out)["running"] == true {
+            break;
+        }
+        assert!(Instant::now() < deadline, "agent did not come up");
+        std::thread::sleep(Duration::from_millis(50));
+    }
+
+    std::fs::remove_file(v.dir.path().join("agent.json")).expect("remove agent.json");
+    default_cmd(&v)
+        .args(["agent", "start"])
+        .assert()
+        .code(11)
+        .stderr(predicate::str::contains("state file"));
+}
+
 #[test]
 fn foreground_agent_serves_status_until_killed() {
     let v = TestVault::new();
