@@ -37,6 +37,9 @@ agent's pid and endpoint.
 
 * `--no-agent` (global flag) or `WCM_NO_AGENT=1`: neither read from nor write
   to the agent for this invocation.
+* Both are forwarded through the WSL shim (`--no-agent` is passed on,
+  `WCM_NO_AGENT` travels via `WSLENV`), so they apply to commands proxied from
+  WSL to `wcm.exe` just as they do on the Windows side.
 
 ## Expiry
 
@@ -61,7 +64,10 @@ immediately. The agent does not react to screen lock or sleep in this version.
 `agent.json` records the endpoint, pid, start time and version — no secrets.
 Clients only connect to the endpoint written there, so another user cannot
 plant a fake agent under a predictable name. `WCM_DATA_DIR` moves the state
-file; `WCM_AGENT_ENDPOINT` overrides the endpoint (tests).
+file; `WCM_AGENT_ENDPOINT` overrides the endpoint (tests). `WCM_DATA_DIR` must
+point at a directory only you can write to: clients trust the endpoint recorded
+in the `agent.json` found there, so anyone who can write that file can redirect
+your vault key to an agent they control.
 
 If the agent is killed (`taskkill`, `kill -9`, logoff) the stale `agent.json`
 and socket file are cleaned up by the next command / `wcm agent start`.

@@ -41,6 +41,10 @@ mod platform {
     pub fn current_user_sid() -> Option<String> {
         // SAFETY: every pointer handed to Win32 points into buffers owned by this
         // frame and sized by the size query; handles are closed before returning.
+        // In particular `user` borrows `buf` and `user.User.Sid` points *into*
+        // `buf`, so `buf` must stay alive and unmoved (no reallocation, no drop)
+        // until `ConvertSidToStringSidW` has returned — it is neither reassigned
+        // nor grown between the cast and that call.
         #[allow(unsafe_code)]
         unsafe {
             let mut token = HANDLE::default();

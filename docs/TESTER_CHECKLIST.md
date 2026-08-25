@@ -183,24 +183,28 @@ binary into the distro (`cargo build -p wcm-cli` inside WSL, or the
 53. `wcm get demo/login` → **one** Hello prompt, prints `hunter2`;
     `wcm get demo/login` again within 2 minutes → **no prompt**, same output;
     `wcm status` → `agent:      running, cached for this vault (…)`. ☐
-54. `wcm agent lock` → the next `wcm get demo/login` prompts again. Wait > 2
+54. Close the console/terminal that ran `wcm agent start`, then from a **new**
+    window: `wcm agent status` still shows it running (same pid) and
+    `wcm get demo/login` still needs no prompt. No console window flashed when
+    the agent started and none is left behind for it. ☐
+55. `wcm agent lock` → the next `wcm get demo/login` prompts again. Wait > 2
     minutes without using wcm → the next `get` prompts again (idle expiry). ☐
-55. From a **different Windows user** on the same machine (or `runas`):
+56. From a **different Windows user** on the same machine (or `runas`):
     `wcm agent status` → `not running` (their own state), and connecting to
     your pipe name with e.g. PowerShell
     `[System.IO.Pipes.NamedPipeClientStream]::new('.', 'wcm-agent-<hex>').Connect(1000)`
     fails with *access denied*. ☐
-56. From WSL: `wcm agent start` returns immediately (the Linux shell is not
+57. From WSL: `wcm agent start` returns immediately (the Linux shell is not
     blocked), `wcm agent status` from WSL and from PowerShell show the same pid,
     `wcm get demo/login` from WSL prompts once and then not. `wcm agent stop`
     → `tasklist | findstr wcm` shows no `wcm.exe` left. ☐
 
 ## K. Cleanup and report
 
-57. `Remove-Item -Recurse C:\wcm-test`; remove the test Hello credential if
+58. `Remove-Item -Recurse C:\wcm-test`; remove the test Hello credential if
     you want (`wcm recover`/`init` create `wcm-v1-<id>` credentials; they are
     harmless). ☐
-58. Report: Windows version/build, hardware (TPM yes/no), terminal, Hello
+59. Report: Windows version/build, hardware (TPM yes/no), terminal, Hello
     method, which build (mingw/MSVC), the `wcm doctor --json` outputs, and
     every step whose result differed from the expectation above (with the
     exact stderr text and exit code).
