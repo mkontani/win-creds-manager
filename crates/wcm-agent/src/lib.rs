@@ -8,3 +8,6 @@
 #![forbid(unsafe_code)]
 
 pub mod duration;
+pub mod protocol;
+
+pub use protocol::{EntryInfo, PolicyInfo, Request, Response, VaultId, WireDek, PROTOCOL_VERSION};
