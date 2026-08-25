@@ -4,7 +4,7 @@
 
 use std::io;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::thread;
 use std::time::{Duration, Instant};
 
@@ -23,6 +23,9 @@ use crate::protocol::{self, Op, Request, Response, WireDek, PROTOCOL_VERSION};
 const ACCEPT_POLL: Duration = Duration::from_millis(50);
 /// How often expired entries are zeroized even when nobody asks.
 const SWEEP_INTERVAL: Duration = Duration::from_secs(1);
+/// Consecutive non-`WouldBlock` accept errors (about one second at
+/// [`ACCEPT_POLL`]) before the listener is assumed broken and `serve` gives up.
+const MAX_ACCEPT_FAILURES: u32 = 20;
 
 /// Platform options for [`Server::bind`].
 #[derive(Clone, Debug, Default)]
@@ -71,27 +74,49 @@ impl Server {
         &self.endpoint
     }
 
-    /// Serves until a `Stop` request. Every cached key is wiped before returning.
+    /// Serves until a `Stop` request. Every cached key is wiped before returning,
+    /// including when the listener is given up on (see [`MAX_ACCEPT_FAILURES`]).
     pub fn serve(self, cache: Arc<Mutex<Cache>>) -> Result<()> {
         let stop = Arc::new(AtomicBool::new(false));
         spawn_sweeper(cache.clone(), stop.clone());
+        let mut consecutive_failures: u32 = 0;
         while !stop.load(Ordering::SeqCst) {
             match self.listener.accept() {
                 Ok(stream) => {
+                    consecutive_failures = 0;
                     let cache = cache.clone();
                     let stop = stop.clone();
                     thread::spawn(move || handle(stream, &cache, &stop));
                 }
-                // WouldBlock: nobody is connecting. Anything else is transient
-                // (a client that vanished between connect and accept); keep serving.
-                Err(_) => thread::sleep(ACCEPT_POLL),
+                // WouldBlock: nobody is connecting; keep polling.
+                Err(e) if e.kind() == io::ErrorKind::WouldBlock => {
+                    thread::sleep(ACCEPT_POLL);
+                }
+                // Anything else (EMFILE, ENOMEM, a dead listener handle, ...) might be
+                // transient, but repeating it means the listener is broken: count
+                // consecutive failures and give up rather than spin forever accepting
+                // nothing while looking healthy (state file still present).
+                Err(e) => {
+                    consecutive_failures += 1;
+                    if consecutive_failures >= MAX_ACCEPT_FAILURES {
+                        lock_cache(&cache).lock_all();
+                        return Err(Error::Helper(format!(
+                            "agent: accept failed {MAX_ACCEPT_FAILURES} times in a row: {e}"
+                        )));
+                    }
+                    thread::sleep(ACCEPT_POLL);
+                }
             }
         }
-        if let Ok(mut c) = cache.lock() {
-            c.lock_all();
-        }
+        lock_cache(&cache).lock_all();
         Ok(())
     }
+}
+
+/// The cache guard, recovering from a poisoned lock: the cache is plain data and a
+/// panicked handler must never leave keys resident or make `Stop` impossible.
+fn lock_cache(cache: &Mutex<Cache>) -> MutexGuard<'_, Cache> {
+    cache.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
 fn try_create(endpoint: &Endpoint, opts: &ServerOptions) -> io::Result<Listener> {
@@ -142,9 +167,7 @@ fn spawn_sweeper(cache: Arc<Mutex<Cache>>, stop: Arc<AtomicBool>) {
     thread::spawn(move || {
         while !stop.load(Ordering::SeqCst) {
             thread::sleep(SWEEP_INTERVAL);
-            if let Ok(mut c) = cache.lock() {
-                c.sweep(Instant::now());
-            }
+            lock_cache(&cache).sweep(Instant::now());
         }
     });
 }
@@ -162,6 +185,10 @@ fn handle(mut stream: Stream, cache: &Mutex<Cache>, stop: &AtomicBool) {
 }
 
 /// Computes the response for `request`; the flag asks the accept loop to exit.
+///
+/// Never returns the reserved `INTERNAL` error code: a poisoned cache mutex (a
+/// panic in another connection's handler thread) is recovered rather than
+/// reported, so `LockAll`/`Stop` stay able to wipe the cache no matter what.
 pub fn dispatch(request: Request, cache: &Mutex<Cache>) -> (Response, bool) {
     if request.version != PROTOCOL_VERSION {
         return (
@@ -176,15 +203,7 @@ pub fn dispatch(request: Request, cache: &Mutex<Cache>) -> (Response, bool) {
         );
     }
     let now = Instant::now();
-    let Ok(mut cache) = cache.lock() else {
-        return (
-            Response::Error {
-                code: "INTERNAL".into(),
-                message: "cache lock poisoned".into(),
-            },
-            false,
-        );
-    };
+    let mut cache = lock_cache(cache);
     match request.op {
         Op::Ping => (Response::Ok, false),
         Op::Put {
@@ -370,5 +389,29 @@ mod tests {
         );
         assert_eq!(dispatch(Request::new(Op::Stop), &c), (Response::Ok, true));
         assert!(c.lock().expect("lock").is_empty());
+    }
+
+    #[test]
+    fn stop_still_wipes_the_cache_after_a_poisoned_lock() {
+        let c = cache();
+        dispatch(
+            Request::new(Op::Put {
+                vault_id: ID,
+                path: "/v".into(),
+                dek: dek(),
+            }),
+            &c,
+        );
+        // Simulate a handler thread that panicked while holding the cache lock.
+        let panicked = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let _guard = c.lock().expect("lock");
+            panic!("simulated handler panic while holding the cache lock");
+        }));
+        assert!(panicked.is_err(), "expected the closure to unwind");
+        assert!(c.is_poisoned());
+
+        let (r, stop) = dispatch(Request::new(Op::Stop), &c);
+        assert_eq!((r, stop), (Response::Ok, true));
+        assert!(lock_cache(&c).is_empty());
     }
 }
