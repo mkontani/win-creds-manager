@@ -13,6 +13,14 @@ use wcm_core::{Error, Result};
 use zeroize::Zeroizing;
 
 /// Bumped on any incompatible message change; both sides must agree.
+///
+/// Limitation: the version lives inside the CBOR body, so it is only checked
+/// after the whole [`Request`] has decoded. A newer client sending an [`Op`]
+/// variant this build does not know therefore fails at decode — the agent drops
+/// the connection instead of answering `Response::Error { code: "VERSION", .. }`,
+/// and the client reports a transport failure. A future incompatible bump must
+/// account for that: either keep every existing `Op` variant decodable, or move
+/// the version out of the body into a fixed frame prefix that is parsed first.
 pub const PROTOCOL_VERSION: u16 = 1;
 /// Largest frame body accepted in either direction (bytes).
 pub const MAX_FRAME: usize = 4096;
@@ -138,7 +146,8 @@ pub enum Response {
         policy: PolicyInfo,
         entries: Vec<EntryInfo>,
     },
-    /// Rejected request. `code` is `VERSION`, `BAD_REQUEST` or `INTERNAL`.
+    /// Rejected request. `code` is `VERSION` or `BAD_REQUEST`; `INTERNAL` is
+    /// reserved and currently never produced (see `server::dispatch`).
     Error { code: String, message: String },
 }
 
@@ -162,8 +171,13 @@ pub struct EntryInfo {
 }
 
 /// Encodes `value` as one frame: `u32` little-endian body length + CBOR body.
+///
+/// The body buffer is allocated at [`MAX_FRAME`] up front. Growing it from empty
+/// would reallocate while a DEK is already in it, and `Zeroizing` only wipes the
+/// final allocation — the intermediate copies would be left in freed heap of a
+/// long-lived agent. The frame buffer is sized exactly and never grows.
 pub fn encode_frame<T: Serialize>(value: &T) -> Result<Zeroizing<Vec<u8>>> {
-    let mut body: Zeroizing<Vec<u8>> = Zeroizing::new(Vec::new());
+    let mut body: Zeroizing<Vec<u8>> = Zeroizing::new(Vec::with_capacity(MAX_FRAME));
     ciborium::into_writer(value, &mut *body)
         .map_err(|e| Error::Helper(format!("agent: encode: {e}")))?;
     if body.len() > MAX_FRAME {

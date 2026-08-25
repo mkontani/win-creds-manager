@@ -2,6 +2,7 @@
 //! request). Every request runs on a helper thread and is abandoned after
 //! [`REQUEST_TIMEOUT`], so a wedged agent never hangs a `wcm` command.
 
+use std::io;
 use std::path::Path;
 use std::sync::mpsc;
 use std::thread;
@@ -43,14 +44,16 @@ impl Client {
     ///   it starts). `agent.json` is never touched.
     /// * `WCM_AGENT_ENDPOINT` unset: the endpoint recorded in
     ///   `<data_dir>/agent.json`. `None` when there is no state file, its
-    ///   `endpoint` field doesn't parse, or nothing answers; a state file left
-    ///   behind by a dead or corrupted agent is removed in both of the latter
-    ///   cases.
+    ///   `endpoint` field doesn't parse, or nothing answers. The state file is
+    ///   removed only when it is provably useless: it doesn't parse, or nothing
+    ///   is listening at the endpoint it names. A timeout or any other failure
+    ///   leaves it alone — a wedged but live agent still owns that endpoint and
+    ///   deleting its file would orphan it.
     pub fn discover(data_dir: &Path) -> Option<Client> {
         match env_endpoint() {
             Ok(Some(endpoint)) => {
                 let client = Client::connect(endpoint);
-                return client.ping().is_ok().then_some(client);
+                return matches!(client.probe(), Probe::Answered).then_some(client);
             }
             Err(_) => return None,
             Ok(None) => {}
@@ -62,11 +65,28 @@ impl Client {
             return None;
         };
         let client = Client::connect(endpoint);
-        if client.ping().is_ok() {
-            Some(client)
-        } else {
-            let _ = state.remove();
-            None
+        match client.probe() {
+            Probe::Answered => Some(client),
+            // The connect itself failed: the agent died without cleaning up.
+            Probe::NoListener => {
+                let _ = state.remove();
+                None
+            }
+            // Something answers there (or might still): fall back to a normal
+            // unlock, but keep the file so `agent stop` can still find it.
+            Probe::Unreachable => None,
+        }
+    }
+
+    /// Pings the endpoint, keeping "nothing is listening here" distinguishable
+    /// from a timeout or a protocol failure.
+    fn probe(&self) -> Probe {
+        match self.send(Request::new(Op::Ping)) {
+            Ok(Response::Ok) => Probe::Answered,
+            // The connect succeeded, so something owns this endpoint even if it
+            // answered nonsense, timed out, or is a kind we cannot speak to.
+            Ok(_) | Err(RoundTripError::Other(_)) => Probe::Unreachable,
+            Err(RoundTripError::Connect(_)) => Probe::NoListener,
         }
     }
 
@@ -125,6 +145,12 @@ impl Client {
 
     /// Sends one request and waits at most [`REQUEST_TIMEOUT`] for the answer.
     pub fn raw(&self, request: Request) -> Result<Response> {
+        self.send(request).map_err(|e| e.into_error(&self.endpoint))
+    }
+
+    /// [`Client::raw`] without flattening the failure: the caller can tell a
+    /// failed connect from everything else.
+    fn send(&self, request: Request) -> std::result::Result<Response, RoundTripError> {
         let endpoint = self.endpoint.clone();
         let (tx, rx) = mpsc::channel();
         thread::spawn(move || {
@@ -132,23 +158,60 @@ impl Client {
         });
         match rx.recv_timeout(REQUEST_TIMEOUT) {
             Ok(result) => result,
-            Err(_) => Err(Error::Helper(format!(
+            Err(_) => Err(RoundTripError::Other(Error::Helper(format!(
                 "agent: no response from {} within {}s",
                 self.endpoint,
                 REQUEST_TIMEOUT.as_secs()
-            ))),
+            )))),
         }
     }
 }
 
-fn round_trip(endpoint: &Endpoint, request: Request) -> Result<Response> {
+/// What a [`Client::probe`] found at the endpoint.
+///
+/// The distinction that matters is [`Probe::NoListener`] versus everything
+/// else: only "nothing is listening" proves an `agent.json` naming this
+/// endpoint is stale. The reason behind [`Probe::Unreachable`] is not carried —
+/// [`Client::discover`] falls back silently either way, and callers that need
+/// the message use [`Client::raw`], which returns the full [`Error`].
+enum Probe {
+    /// An agent answered the ping.
+    Answered,
+    /// Nothing is listening: the connect itself failed.
+    NoListener,
+    /// Reached but unusable: an unexpected answer, a timeout, a framing or
+    /// protocol failure, or an endpoint kind this platform cannot open.
+    Unreachable,
+}
+
+/// A failed round trip, before it is flattened into [`Error::Helper`].
+enum RoundTripError {
+    /// `Stream::connect` failed — nobody is listening at this endpoint.
+    Connect(io::Error),
+    /// Anything else: unusable endpoint kind, write, read, decode.
+    Other(Error),
+}
+
+impl RoundTripError {
+    /// Every client failure is an [`Error::Helper`] so they share one exit code.
+    fn into_error(self, endpoint: &Endpoint) -> Error {
+        match self {
+            RoundTripError::Connect(e) => Error::Helper(format!("agent: connect {endpoint}: {e}")),
+            RoundTripError::Other(e) => e,
+        }
+    }
+}
+
+fn round_trip(
+    endpoint: &Endpoint,
+    request: Request,
+) -> std::result::Result<Response, RoundTripError> {
     let name = endpoint
         .to_name()
-        .map_err(|e| Error::Helper(format!("agent: {endpoint}: {e}")))?;
-    let mut stream = Stream::connect(name)
-        .map_err(|e| Error::Helper(format!("agent: connect {endpoint}: {e}")))?;
-    protocol::write_frame(&mut stream, &request)?;
-    protocol::read_frame(&mut stream)
+        .map_err(|e| RoundTripError::Other(Error::Helper(format!("agent: {endpoint}: {e}"))))?;
+    let mut stream = Stream::connect(name).map_err(RoundTripError::Connect)?;
+    protocol::write_frame(&mut stream, &request).map_err(RoundTripError::Other)?;
+    protocol::read_frame(&mut stream).map_err(RoundTripError::Other)
 }
 
 fn expect_ok(response: Response) -> Result<()> {

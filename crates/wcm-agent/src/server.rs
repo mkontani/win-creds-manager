@@ -46,11 +46,29 @@ impl Server {
     ///
     /// * Windows: the pipe gets the DACL `D:P(A;;GA;;;<owner_sid>)`; without a
     ///   SID this fails (`Error::Helper`) rather than using the default ACL.
-    /// * `AddrInUse`: if an agent answers there, `Error::AlreadyExists`;
-    ///   otherwise (Unix) the stale socket file is removed and the bind retried.
+    /// * `AddrInUse` (Unix): if an agent answers there, `Error::AlreadyExists`;
+    ///   otherwise the stale socket file is removed and the bind retried.
+    /// * `PermissionDenied` (Windows): the same situation — a duplicate pipe
+    ///   instance is refused with `ERROR_ACCESS_DENIED`. If an agent answers
+    ///   there, `Error::AlreadyExists`; otherwise the original error, since a
+    ///   pipe leaves nothing behind to reclaim.
     pub fn bind(endpoint: Endpoint, opts: &ServerOptions) -> Result<Server> {
         let listener = match try_create(&endpoint, opts) {
             Ok(listener) => listener,
+            // `interprocess` creates the first instance of a pipe with
+            // FILE_FLAG_FIRST_PIPE_INSTANCE, so a second CreateNamedPipeW on the same
+            // name fails with ERROR_ACCESS_DENIED (PermissionDenied), never AddrInUse.
+            Err(e) if cfg!(windows) && e.kind() == io::ErrorKind::PermissionDenied => {
+                if Client::connect(endpoint.clone()).ping().is_ok() {
+                    return Err(Error::AlreadyExists(format!(
+                        "agent already listening on {endpoint}"
+                    )));
+                }
+                // Nobody answers: the name is genuinely off limits (a pipe owned by
+                // another user, a security-descriptor mismatch, ...). There is no
+                // stale file to remove, so retrying would fail the same way.
+                return Err(Error::Helper(format!("agent: bind {endpoint}: {e}")));
+            }
             Err(e) if e.kind() == io::ErrorKind::AddrInUse => {
                 if Client::connect(endpoint.clone()).ping().is_ok() {
                     return Err(Error::AlreadyExists(format!(
@@ -83,13 +101,17 @@ impl Server {
         while !stop.load(Ordering::SeqCst) {
             match self.listener.accept() {
                 Ok(stream) => {
-                    consecutive_failures = 0;
                     // BSD/macOS accepted sockets inherit the listener's O_NONBLOCK and
                     // interprocess does not clear it in `Accept` mode; `handle` relies on
                     // blocking reads, so force it off here.
                     if stream.set_nonblocking(false).is_err() {
-                        continue; // drop this connection; the client gets EOF and falls back
+                        // Drop this connection (the client gets EOF and falls back) and
+                        // pace the loop: a client hammering connects must not spin it.
+                        thread::sleep(ACCEPT_POLL);
+                        continue;
                     }
+                    // Only a fully usable connection clears the failure budget.
+                    consecutive_failures = 0;
                     let cache = cache.clone();
                     let stop = stop.clone();
                     thread::spawn(move || handle(stream, &cache, &stop));

@@ -145,6 +145,32 @@ fn discover_uses_the_state_file_and_removes_it_when_dead() {
     assert!(!state.path().exists(), "stale state file removed");
 }
 
+/// A live agent that is merely slow (or wedged) must keep its `agent.json`:
+/// removing it would orphan the process holding the endpoint. The listener here
+/// never accepts, so the connect succeeds and the ping times out (~2 s).
+#[cfg(unix)]
+#[test]
+fn discover_keeps_the_state_file_when_the_agent_does_not_answer() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join("wedged.sock");
+    let _listener = std::os::unix::net::UnixListener::bind(&path).expect("bind");
+    let state = StateFile::in_dir(dir.path());
+    state
+        .write(&AgentState {
+            endpoint: path.display().to_string(),
+            pid: std::process::id(),
+            started: "2026-08-25T00:00:00Z".into(),
+            version: "test".into(),
+        })
+        .expect("write state");
+
+    assert!(Client::discover(dir.path()).is_none(), "nothing answered");
+    assert!(
+        state.path().exists(),
+        "a timeout must not delete a live agent's state file"
+    );
+}
+
 #[test]
 fn discover_removes_a_corrupt_state_file() {
     let dir = tempfile::tempdir().expect("tempdir");

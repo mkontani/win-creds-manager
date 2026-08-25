@@ -202,6 +202,19 @@ impl StateFile {
         serde_json::from_str(&text).ok()
     }
 
+    /// Removes the file only when it records `pid`.
+    ///
+    /// An exiting agent must not delete a successor's file: `wcm agent stop`
+    /// returns as soon as the reply is on the wire, so a new agent can have
+    /// written its own `agent.json` before the old one finishes shutting down.
+    /// A missing or unparseable file is not an error (nothing to protect).
+    pub fn remove_if_pid(&self, pid: u32) -> Result<()> {
+        match self.read() {
+            Some(state) if state.pid == pid => self.remove(),
+            _ => Ok(()),
+        }
+    }
+
     /// Removes the file; a missing file is fine.
     pub fn remove(&self) -> Result<()> {
         match std::fs::remove_file(&self.path) {
@@ -323,6 +336,32 @@ mod tests {
         file.remove().expect("remove");
         assert!(file.read().is_none());
         file.remove().expect("removing a missing file is fine");
+    }
+
+    #[test]
+    fn remove_if_pid_only_removes_our_own_file() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let file = StateFile::in_dir(dir.path());
+        let state = AgentState {
+            endpoint: "/tmp/a.sock".into(),
+            pid: 4242,
+            started: "2026-08-25T00:00:00Z".into(),
+            version: "0.2.0".into(),
+        };
+        file.write(&state).expect("write");
+
+        // A successor already replaced the file: leave it alone.
+        file.remove_if_pid(4243).expect("other pid");
+        assert_eq!(file.read(), Some(state));
+
+        file.remove_if_pid(4242).expect("own pid");
+        assert!(!file.path().exists());
+
+        // Missing and unparseable files are both fine.
+        file.remove_if_pid(4242).expect("missing file");
+        std::fs::write(file.path(), "not json").expect("write garbage");
+        file.remove_if_pid(4242).expect("garbage file");
+        assert!(file.path().exists(), "garbage is left for a human to see");
     }
 
     #[test]
