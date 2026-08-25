@@ -80,6 +80,8 @@ pub enum Command {
     Status(StatusArgs),
     /// Diagnose the environment (Hello, WSL, paths).
     Doctor(DoctorArgs),
+    /// Session cache: keep the vault key in memory so a burst of commands needs one Hello prompt.
+    Agent(AgentArgs),
     /// Internal: clear the clipboard after a timeout if it still holds the copied secret.
     #[command(hide = true)]
     Unclip(UnclipArgs),
@@ -455,6 +457,43 @@ pub struct SlotRmArgs {
     pub force: bool,
 }
 
+/// `wcm agent <subcommand>`
+#[derive(Args, Debug)]
+pub struct AgentArgs {
+    #[command(subcommand)]
+    pub command: AgentCommand,
+}
+
+/// Session cache agent subcommands.
+#[derive(Subcommand, Debug)]
+pub enum AgentCommand {
+    /// Start the agent in the background (use --foreground to keep it attached).
+    Start(AgentStartArgs),
+    /// Stop the agent (every cached key is forgotten).
+    Stop,
+    /// Forget every cached key but keep the agent running.
+    Lock,
+    /// Show whether the agent runs and which vault keys it holds.
+    Status,
+}
+
+/// `wcm agent start`
+#[derive(Args, Debug)]
+pub struct AgentStartArgs {
+    /// Forget a key this long after its last use (e.g. 90s, 10m, 1h30m).
+    #[arg(long, default_value = "10m", value_name = "DURATION")]
+    pub idle: String,
+    /// Forget a key this long after it was cached, even while in use.
+    #[arg(long, default_value = "1h", value_name = "DURATION")]
+    pub ttl: String,
+    /// Forget a key after it was handed out this many times.
+    #[arg(long, value_name = "N")]
+    pub max_uses: Option<u32>,
+    /// Run in this process instead of detaching (the detached agent runs this).
+    #[arg(long)]
+    pub foreground: bool,
+}
+
 /// `wcm status`
 #[derive(Args, Debug)]
 pub struct StatusArgs {}
@@ -531,6 +570,20 @@ mod tests {
         }
         let c = Cli::parse_from(["wcm", "--exit-codes"]);
         assert!(c.exit_codes && c.command.is_none());
+
+        let c = Cli::parse_from(["wcm", "agent", "start", "--idle", "5m", "--max-uses", "3"]);
+        match c.command {
+            Some(Command::Agent(a)) => match a.command {
+                AgentCommand::Start(s) => {
+                    assert_eq!(s.idle, "5m");
+                    assert_eq!(s.ttl, "1h");
+                    assert_eq!(s.max_uses, Some(3));
+                    assert!(!s.foreground);
+                }
+                other => panic!("expected agent start, got {other:?}"),
+            },
+            _ => panic!("expected agent"),
+        }
     }
 
     #[test]

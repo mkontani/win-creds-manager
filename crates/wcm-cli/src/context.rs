@@ -197,15 +197,20 @@ fn warn_env_passphrase(out: &Output) {
     }
 }
 
-/// Default vault path: `$WCM_DATA_DIR/vault.wcm` if set, else
-/// `<data_local_dir>/wcm/vault.wcm` (`%LOCALAPPDATA%\wcm\vault.wcm` on Windows).
-pub fn default_vault_path() -> Result<PathBuf> {
+/// Data directory: `$WCM_DATA_DIR` if set, else `<data_local_dir>/wcm`
+/// (`%LOCALAPPDATA%\wcm` on Windows). Holds the default vault and `agent.json`.
+pub fn default_data_dir() -> Result<PathBuf> {
     if let Some(dir) = std::env::var_os(DATA_DIR_ENV) {
-        return Ok(PathBuf::from(dir).join("vault.wcm"));
+        return Ok(PathBuf::from(dir));
     }
     let dirs = directories::BaseDirs::new()
         .ok_or_else(|| Error::Io("cannot determine the user data directory".into()))?;
-    Ok(wcm_core::vault::default_vault_path(dirs.data_local_dir()))
+    Ok(dirs.data_local_dir().join("wcm"))
+}
+
+/// Default vault path: `<data dir>/vault.wcm`.
+pub fn default_vault_path() -> Result<PathBuf> {
+    Ok(default_data_dir()?.join("vault.wcm"))
 }
 
 #[cfg(test)]
@@ -219,6 +224,10 @@ mod tests {
         std::env::set_var(DATA_DIR_ENV, "/tmp/wcm-test-dir");
         let p = default_vault_path().expect("path");
         assert_eq!(p, PathBuf::from("/tmp/wcm-test-dir/vault.wcm"));
+        assert_eq!(
+            default_data_dir().expect("dir"),
+            PathBuf::from("/tmp/wcm-test-dir")
+        );
         match prev {
             Some(v) => std::env::set_var(DATA_DIR_ENV, v),
             None => std::env::remove_var(DATA_DIR_ENV),

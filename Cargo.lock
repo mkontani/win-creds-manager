@@ -1743,6 +1743,7 @@ dependencies = [
  "sha2",
  "ssh-key",
  "tempfile",
+ "wcm-agent",
  "wcm-core",
  "wcm-hello",
  "zeroize",

@@ -15,6 +15,7 @@ path = "src/main.rs"
 [dependencies]
 wcm-core = { workspace = true }
 wcm-hello = { workspace = true }
+wcm-agent = { workspace = true }
 clap.workspace = true
 clap_complete.workspace = true
 anyhow.workspace = true

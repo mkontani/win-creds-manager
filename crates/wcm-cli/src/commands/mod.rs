@@ -1,6 +1,7 @@
 //! Subcommand implementations. Each module exposes `run(ctx, args) -> Result<()>`.
 
 pub mod add;
+pub mod agent;
 pub mod completions;
 pub mod doctor;
 pub mod export;
@@ -49,6 +50,7 @@ pub fn dispatch(ctx: &Ctx, command: &Command) -> Result<()> {
         Command::Slot(a) => slot::run(ctx, a),
         Command::Status(a) => status::run(ctx, a),
         Command::Doctor(a) => doctor::run(ctx, a),
+        Command::Agent(a) => agent::run(ctx, a),
         Command::Unclip(a) => unclip::run(ctx, a),
         Command::Completions(a) => completions::run(ctx, a),
         Command::Version => version(&ctx.out),
