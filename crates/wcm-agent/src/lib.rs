@@ -9,7 +9,9 @@
 
 pub mod cache;
 pub mod duration;
+pub mod endpoint;
 pub mod protocol;
 
 pub use cache::{Cache, Policy};
+pub use endpoint::{AgentState, Endpoint, StateFile, ENDPOINT_ENV};
 pub use protocol::{EntryInfo, PolicyInfo, Request, Response, VaultId, WireDek, PROTOCOL_VERSION};
