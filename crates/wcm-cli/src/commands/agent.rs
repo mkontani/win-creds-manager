@@ -232,6 +232,14 @@ fn spawn_detached(args: &AgentStartArgs) -> Result<Child> {
         .stderr(Stdio::null());
     crate::prompt::scrub_secret_env(&mut cmd);
     detach(&mut cmd);
+    // Windows inherits every inheritable handle, including the stdout/stderr
+    // pipes our own caller gave us; without this the agent would keep them
+    // open and the caller (WSL shim, test harness) would never see EOF.
+    wcm_hello::process::stop_inheriting_stdio().map_err(|e| {
+        Error::Helper(format!(
+            "agent: cannot stop the child from inheriting this process's handles: {e}"
+        ))
+    })?;
     cmd.spawn()
         .map_err(|e| Error::Helper(format!("agent: spawn: {e}")))
 }

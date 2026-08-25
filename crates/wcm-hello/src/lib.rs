@@ -9,6 +9,7 @@ pub mod dpapi;
 pub mod focus;
 pub mod kcm;
 pub mod kcm_api;
+pub mod process;
 pub mod session;
 
 use wcm_core::slot::{
