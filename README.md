@@ -16,7 +16,7 @@ Windows Hello: waiting for your PIN/biometric…      # ← dialog appears, once
 ghp_16C7e42F292c6912E7710c838347Ae178B4a     # printed in clear (pipe it, or use --clip)
 ```
 
-> **Status:** v0.1.0 — usable, format frozen (v1), Windows paths awaiting wider
+> **Status:** v0.2.0 — usable, format frozen (v1), Windows paths awaiting wider
 > manual testing (see [docs/TESTER_CHECKLIST.md](docs/TESTER_CHECKLIST.md)).
 
 ## Security model in one paragraph
@@ -38,7 +38,8 @@ associated data, so tampering is detected. Full details:
 ## Features
 
 * Windows Hello (PIN / face / fingerprint) gate on every unlock — one prompt
-  per `wcm` invocation; batch commands keep prompts to a minimum.
+  per `wcm` invocation; batch commands keep prompts to a minimum, and the
+  opt-in `wcm agent` session cache reduces a burst of commands to one prompt.
 * TPM-backed keys when available (`hw_backed` recorded, warning otherwise).
 * Single-file vault, atomic writes, `.bak` of the previous generation,
   concurrent-write detection, header-authenticated format with golden vectors.
@@ -139,6 +140,20 @@ commands such as `wcm get a b c`.
 Global flags: `--vault PATH` (env `WCM_VAULT`), `--json`, `--slot LABEL`
 (try this slot first, e.g. `--slot recovery`), `--no-input`, `-q/--quiet`.
 
+## Session cache (`wcm agent`)
+
+```bash
+wcm agent start --idle 5m    # one Hello prompt, then no prompts for 5 min of activity
+wcm get a && wcm get b       # second command reuses the cached key
+wcm agent lock               # forget the key now
+wcm agent stop
+```
+
+Off unless started; keys expire by idle time (10 min), absolute time (1 h) or
+use count; `--no-agent` / `WCM_NO_AGENT=1` bypasses it per command. Works from
+WSL (the agent runs on the Windows side). Details and threat notes:
+[docs/AGENT.md](docs/AGENT.md).
+
 ## Using wcm from WSL
 
 Install the Linux build inside your distro and `wcm.exe` on Windows. The
@@ -147,14 +162,15 @@ Linux binary detects WSL (1 or 2), finds `wcm.exe` (`WCM_WINDOWS_EXE` → `PATH`
 arguments with `wslpath -w`, and `exec`s it through interop; the Hello dialog
 appears on the Windows desktop and the exit code is relayed. `wcm ssh add`
 pipes the key into the **Linux** `ssh-agent`. Details, troubleshooting and
-exit codes 126/127: [docs/WSL.md](docs/WSL.md).
+exit codes 126/127: [docs/WSL.md](docs/WSL.md). `wcm agent start` from WSL
+starts the session cache on the Windows side.
 
 ## Exit codes
 
 `0` ok · `2` usage/invalid · `3` not found · `4` already exists · `5` not
 initialized · `6` Hello cancelled · `7` auth unavailable · `8` integrity /
 wrong key · `9` locked or concurrently modified · `10` I/O · `11` helper
-(clipboard/ssh-add) · `12` import/export format · `126`/`127` WSL shim ·
+(clipboard/ssh-add/agent) · `12` import/export format · `126`/`127` WSL shim ·
 `130` interrupted. Full table with hints: [docs/EXIT_CODES.md](docs/EXIT_CODES.md)
 or `wcm --exit-codes`.
 
@@ -186,12 +202,12 @@ wcm --json init --no-hello --passphrase | jq -r .recovery_key   # scripted setup
 | `WCM_SSH_ADD` | Path of the `ssh-add` executable (default: from `PATH`, then `C:\Windows\System32\OpenSSH\ssh-add.exe`). |
 | `WCM_WINDOWS_EXE` | WSL only: explicit path of `wcm.exe` (Linux or Windows path). |
 | `WCM_NO_WSL_PROXY` | WSL only: when set, do not proxy to `wcm.exe`; run the Linux binary natively (passphrase/recovery slots only). |
+| `WCM_NO_AGENT` | When truthy (`1`, `true`, `yes`, `on`), never use a running `wcm agent` for this invocation (same as `--no-agent`). |
+| `WCM_AGENT_ENDPOINT` | Override the agent's endpoint (named pipe path on Windows, socket path elsewhere). Mainly for tests. |
 | `WCM_HELLO_FOCUS` | Set to `0` to disable the helper that brings the Windows Hello dialog to the foreground. |
 
 ## Roadmap
 
-* `wcm agent` — optional, opt-in session cache over a named pipe so that a
-  burst of commands needs a single Hello prompt.
 * Built-in ssh-agent that signs with keys from the vault without exporting them.
 * GUI (Tauri v2) reusing `wcm-core` + `wcm-hello` directly.
 * Authenticode-signed release binaries; winget / scoop packages.

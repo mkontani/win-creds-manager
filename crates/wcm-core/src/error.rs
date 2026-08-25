@@ -120,7 +120,7 @@ impl Error {
             ("INTEGRITY", 8, "vault integrity or decryption failure"),
             ("LOCKED", 9, "vault locked or concurrently modified"),
             ("IO", 10, "file system error"),
-            ("HELPER", 11, "clipboard / ssh-add helper failure"),
+            ("HELPER", 11, "clipboard / ssh-add / agent helper failure"),
             ("FORMAT", 12, "import/export format error"),
             (
                 "WSL_INTEROP_BROKEN",
