@@ -329,9 +329,9 @@ mod tests {
 
     #[test]
     fn agent_use_honors_flag_and_env() {
-        let cli = Cli::parse_from(["wcm", "--no-agent", "status"]);
+        let cli = Cli::try_parse_from(["wcm", "--no-agent", "status"]).expect("parse");
         assert_eq!(agent_use(&cli), AgentUse::Disabled);
-        let cli = Cli::parse_from(["wcm", "status"]);
+        let cli = Cli::try_parse_from(["wcm", "status"]).expect("parse");
         // Only meaningful when the variable is not set in the test environment.
         if std::env::var_os(NO_AGENT_ENV).is_none() {
             assert_eq!(agent_use(&cli), AgentUse::Auto);

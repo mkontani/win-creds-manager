@@ -541,7 +541,8 @@ mod tests {
 
     #[test]
     fn parses_common_invocations() {
-        let c = Cli::parse_from(["wcm", "--json", "get", "a", "b", "--field", "username"]);
+        let c = Cli::try_parse_from(["wcm", "--json", "get", "a", "b", "--field", "username"])
+            .expect("parse");
         assert!(c.json);
         match c.command {
             Some(Command::Get(g)) => {
@@ -550,7 +551,7 @@ mod tests {
             }
             _ => panic!("expected get"),
         }
-        let c = Cli::parse_from([
+        let c = Cli::try_parse_from([
             "wcm",
             "add",
             "x",
@@ -558,7 +559,8 @@ mod tests {
             "--no-symbols",
             "--field",
             "url=https://e",
-        ]);
+        ])
+        .expect("parse");
         match c.command {
             Some(Command::Add(a)) => {
                 assert_eq!(a.secret.generate, Some(24));
@@ -567,15 +569,17 @@ mod tests {
             }
             _ => panic!("expected add"),
         }
-        let c = Cli::parse_from(["wcm", "run", "--env", "A=x", "--", "sh", "-c", "echo"]);
+        let c = Cli::try_parse_from(["wcm", "run", "--env", "A=x", "--", "sh", "-c", "echo"])
+            .expect("parse");
         match c.command {
             Some(Command::Run(r)) => assert_eq!(r.cmd, vec!["sh", "-c", "echo"]),
             _ => panic!("expected run"),
         }
-        let c = Cli::parse_from(["wcm", "--exit-codes"]);
+        let c = Cli::try_parse_from(["wcm", "--exit-codes"]).expect("parse");
         assert!(c.exit_codes && c.command.is_none());
 
-        let c = Cli::parse_from(["wcm", "agent", "start", "--idle", "5m", "--max-uses", "3"]);
+        let c = Cli::try_parse_from(["wcm", "agent", "start", "--idle", "5m", "--max-uses", "3"])
+            .expect("parse");
         match c.command {
             Some(Command::Agent(a)) => match a.command {
                 AgentCommand::Start(s) => {

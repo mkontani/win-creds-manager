@@ -20,8 +20,13 @@ pub const TIMEOUT_ENV: &str = "WCM_CLIP_TIME";
 
 /// [`TIMEOUT_ENV`] when it holds a number, else [`DEFAULT_TIMEOUT_SECS`].
 pub fn timeout_from_env() -> u64 {
-    std::env::var(TIMEOUT_ENV)
-        .ok()
+    parse_timeout(std::env::var(TIMEOUT_ENV).ok().as_deref())
+}
+
+/// The timeout encoded in an environment value: a whole number of seconds
+/// (surrounding whitespace ignored); anything else is [`DEFAULT_TIMEOUT_SECS`].
+pub fn parse_timeout(value: Option<&str>) -> u64 {
+    value
         .and_then(|v| v.trim().parse::<u64>().ok())
         .unwrap_or(DEFAULT_TIMEOUT_SECS)
 }
@@ -123,14 +128,14 @@ mod tests {
     }
 
     #[test]
-    fn timeout_env_is_parsed_with_a_fallback() {
-        // No other unit test in this crate touches WCM_CLIP_TIME.
-        assert_eq!(timeout_from_env(), DEFAULT_TIMEOUT_SECS);
-        std::env::set_var(TIMEOUT_ENV, " 7 ");
-        assert_eq!(timeout_from_env(), 7);
-        std::env::set_var(TIMEOUT_ENV, "not-a-number");
-        assert_eq!(timeout_from_env(), DEFAULT_TIMEOUT_SECS);
-        std::env::remove_var(TIMEOUT_ENV);
+    fn timeout_value_is_parsed_with_a_fallback() {
+        // Pure: never sets WCM_CLIP_TIME in the process. clap reads that
+        // variable for `--clip-timeout`, so a concurrent `Cli` parse in another
+        // unit test would abort the whole test binary on a bad value.
+        assert_eq!(parse_timeout(None), DEFAULT_TIMEOUT_SECS);
+        assert_eq!(parse_timeout(Some(" 7 ")), 7);
+        assert_eq!(parse_timeout(Some("not-a-number")), DEFAULT_TIMEOUT_SECS);
+        assert_eq!(parse_timeout(Some("")), DEFAULT_TIMEOUT_SECS);
     }
 
     #[test]
