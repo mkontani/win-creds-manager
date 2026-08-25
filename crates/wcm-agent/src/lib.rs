@@ -8,10 +8,14 @@
 #![forbid(unsafe_code)]
 
 pub mod cache;
+pub mod client;
 pub mod duration;
 pub mod endpoint;
 pub mod protocol;
+pub mod server;
 
 pub use cache::{Cache, Policy};
+pub use client::Client;
 pub use endpoint::{AgentState, Endpoint, StateFile, ENDPOINT_ENV};
 pub use protocol::{EntryInfo, PolicyInfo, Request, Response, VaultId, WireDek, PROTOCOL_VERSION};
+pub use server::{Server, ServerOptions};
